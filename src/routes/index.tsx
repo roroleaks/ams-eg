@@ -156,7 +156,7 @@ function Index() {
   );
 }
 
-function EmptyState() {
+function EmptyState({ onPick }: { onPick: (q: string) => void }) {
   const examples = [
     "PCOS",
     "NAC ovulation",
@@ -179,24 +179,14 @@ function EmptyState() {
       </p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {examples.map((e) => (
-          <a
+          <button
             key={e}
-            href={`?q=${encodeURIComponent(e)}`}
-            onClick={(ev) => {
-              ev.preventDefault();
-              const input = document.querySelector<HTMLInputElement>(
-                'input[placeholder^="Search"]'
-              );
-              if (input) {
-                input.value = e;
-                input.dispatchEvent(new Event("input", { bubbles: true }));
-                input.focus();
-              }
-            }}
+            type="button"
+            onClick={() => onPick(e)}
             className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground hover:bg-accent"
           >
             {e}
-          </a>
+          </button>
         ))}
       </div>
     </div>
