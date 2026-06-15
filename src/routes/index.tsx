@@ -132,37 +132,52 @@ function Index() {
               </span>
             </div>
             <ol className="space-y-3">
-              {results.map((r, i) => (
-                <li
-                  key={i}
-                  className="group rounded-lg border border-border bg-card p-5 transition-shadow hover:shadow-md"
-                >
-                  <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                    {r.product && (
-                      <Badge variant="default" className="font-medium">
-                        {r.product}
-                      </Badge>
-                    )}
-                    {r.section && r.section !== r.text && (
-                      <Badge variant="secondary" className="font-normal">
-                        <BookOpen className="mr-1 h-3 w-3" />
-                        {r.section}
-                      </Badge>
-                    )}
-                    {r.page != null && (
-                      <span className="inline-flex items-center gap-1 text-muted-foreground">
-                        <FileText className="h-3 w-3" /> Page {r.page}
-                      </span>
-                    )}
-                    <span className="ml-auto text-muted-foreground/70">
-                      relevance {r.score.toFixed(2)}
-                    </span>
-                  </div>
-                  <p className="text-[15px] leading-relaxed text-foreground">
-                    <Highlight text={r.text} terms={terms} />
-                  </p>
-                </li>
-              ))}
+              {results.map((r, i) => {
+                const img = getProductImage(r.product);
+                return (
+                  <li
+                    key={i}
+                    className="group flex gap-4 rounded-lg border border-border bg-card p-5 transition-shadow hover:shadow-md"
+                  >
+                    {img ? (
+                      <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-border">
+                        <img
+                          src={img}
+                          alt={r.product ?? ""}
+                          loading="lazy"
+                          className="h-full w-full object-contain"
+                        />
+                      </div>
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                        {r.product && (
+                          <Badge variant="default" className="font-medium">
+                            {r.product}
+                          </Badge>
+                        )}
+                        {r.section && r.section !== r.text && (
+                          <Badge variant="secondary" className="font-normal">
+                            <BookOpen className="mr-1 h-3 w-3" />
+                            {r.section}
+                          </Badge>
+                        )}
+                        {r.page != null && (
+                          <span className="inline-flex items-center gap-1 text-muted-foreground">
+                            <FileText className="h-3 w-3" /> Page {r.page}
+                          </span>
+                        )}
+                        <span className="ml-auto text-muted-foreground/70">
+                          relevance {r.score.toFixed(2)}
+                        </span>
+                      </div>
+                      <p className="text-[15px] leading-relaxed text-foreground">
+                        <Highlight text={r.text} terms={terms} />
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
           </>
         )}
