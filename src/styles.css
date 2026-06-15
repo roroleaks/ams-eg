@@ -141,4 +141,12 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
   }
+
+  .search-mark {
+    background-color: oklch(0.92 0.13 95);
+    color: var(--color-foreground);
+    border-radius: 2px;
+    padding: 0 2px;
+    font-weight: 600;
+  }
 }
