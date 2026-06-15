@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { search, getAllProducts, totalChunks } from "@/lib/search";
 import { Highlight } from "@/components/Highlight";
+import { getProductImage } from "@/data/product-images";
 
 export const Route = createFileRoute("/")({
   head: () => ({
