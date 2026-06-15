@@ -81,17 +81,31 @@ function Index() {
             >
               All products
             </Button>
-            {products.map((p) => (
-              <Button
-                key={p}
-                size="sm"
-                variant={productFilter === p ? "default" : "outline"}
-                onClick={() => setProductFilter(p)}
-                className="h-8"
-              >
-                {p}
-              </Button>
-            ))}
+            {products.map((p) => {
+              const img = getProductImage(p);
+              const active = productFilter === p;
+              return (
+                <Button
+                  key={p}
+                  size="sm"
+                  variant={active ? "default" : "outline"}
+                  onClick={() => setProductFilter(p)}
+                  className="h-9 gap-2 pl-1.5 pr-3"
+                >
+                  {img ? (
+                    <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-border">
+                      <img
+                        src={img}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-contain"
+                      />
+                    </span>
+                  ) : null}
+                  <span>{p}</span>
+                </Button>
+              );
+            })}
           </div>
         </div>
       </header>
