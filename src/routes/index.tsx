@@ -97,7 +97,7 @@ function Index() {
 
       <main className="mx-auto max-w-5xl px-6 py-8">
         {!query.trim() ? (
-          <EmptyState />
+          <EmptyState onPick={setQuery} />
         ) : results.length === 0 ? (
           <div className="rounded-lg border border-border bg-card p-8 text-center">
             <p className="text-sm text-muted-foreground">
