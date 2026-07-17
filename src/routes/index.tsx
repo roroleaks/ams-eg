@@ -8,6 +8,31 @@ import { search, getAllProducts, totalChunks } from "@/lib/search";
 import { Highlight } from "@/components/Highlight";
 import { getProductImage } from "@/data/product-images";
 
+const COMPLAINTS: string[] = [
+  "PCOS",
+  "endometriosis",
+  "fibroid",
+  "irregular periods",
+  "heavy menstrual bleeding",
+  "painful periods",
+  "PMS",
+  "infertility",
+  "recurrent miscarriage",
+  "poor ovarian reserve",
+  "anovulation",
+  "preconception",
+  "menopause",
+  "hot flashes",
+  "low libido",
+  "urinary tract infection",
+  "interstitial cystitis",
+  "breast pain",
+  "fibrocystic breast",
+  "low sperm count",
+  "poor sperm motility",
+  "erectile dysfunction",
+];
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -106,6 +131,31 @@ function Index() {
                 </Button>
               );
             })}
+          </div>
+
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Common complaints
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {COMPLAINTS.map((c) => {
+                const active = query === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setQuery(c)}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </header>
