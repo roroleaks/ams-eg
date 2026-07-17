@@ -8,6 +8,31 @@ import { search, getAllProducts, totalChunks } from "@/lib/search";
 import { Highlight } from "@/components/Highlight";
 import { getProductImage } from "@/data/product-images";
 
+const COMPLAINTS: string[] = [
+  "PCOS",
+  "endometriosis",
+  "fibroid",
+  "irregular periods",
+  "heavy menstrual bleeding",
+  "painful periods",
+  "PMS",
+  "infertility",
+  "recurrent miscarriage",
+  "poor ovarian reserve",
+  "anovulation",
+  "preconception",
+  "menopause",
+  "hot flashes",
+  "low libido",
+  "urinary tract infection",
+  "interstitial cystitis",
+  "breast pain",
+  "fibrocystic breast",
+  "low sperm count",
+  "poor sperm motility",
+  "erectile dysfunction",
+];
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
