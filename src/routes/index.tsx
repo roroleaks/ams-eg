@@ -107,6 +107,31 @@ function Index() {
               );
             })}
           </div>
+
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Common complaints
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {COMPLAINTS.map((c) => {
+                const active = query === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setQuery(c)}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </header>
 
