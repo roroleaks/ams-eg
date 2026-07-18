@@ -58,13 +58,47 @@ export const Route = createFileRoute("/")({
 function Index() {
   const [query, setQuery] = useState("");
   const [productFilter, setProductFilter] = useState<string | null>(null);
+  const [qVec, setQVec] = useState<Float32Array | null>(null);
+  const [embedsReady, setEmbedsReady] = useState(false);
+  const [embedding, setEmbedding] = useState(false);
+  const embedFn = useServerFn(embedQuery);
+  const seqRef = useRef(0);
+
+  // Preload embedding matrix once
+  useEffect(() => {
+    loadEmbeddings()
+      .then(() => setEmbedsReady(true))
+      .catch(() => setEmbedsReady(false));
+  }, []);
+
+  // Debounced query embedding
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setQVec(null);
+      return;
+    }
+    const mySeq = ++seqRef.current;
+    setEmbedding(true);
+    const handle = setTimeout(async () => {
+      try {
+        const { vec } = await embedFn({ data: { query: q } });
+        if (mySeq === seqRef.current) setQVec(new Float32Array(vec));
+      } catch {
+        if (mySeq === seqRef.current) setQVec(null);
+      } finally {
+        if (mySeq === seqRef.current) setEmbedding(false);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [query, embedFn]);
 
   const products = useMemo(() => getAllProducts(), []);
   const results = useMemo(() => {
     if (!query.trim()) return [];
-    const r = search(query, 80);
+    const r = hybridSearch(query, embedsReady ? qVec : null, 80);
     return productFilter ? r.filter((x) => x.product === productFilter) : r;
-  }, [query, productFilter]);
+  }, [query, productFilter, qVec, embedsReady]);
 
   const terms = useMemo(
     () =>
