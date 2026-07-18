@@ -1,10 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { Search, FileText, BookOpen } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { Search, FileText, BookOpen, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { search, getAllProducts, totalChunks } from "@/lib/search";
+import {
+  hybridSearch,
+  getAllProducts,
+  totalChunks,
+  loadEmbeddings,
+} from "@/lib/search";
+import { embedQuery } from "@/lib/embed.functions";
 import { Highlight } from "@/components/Highlight";
 import { getProductImage } from "@/data/product-images";
 
