@@ -74,8 +74,14 @@ function Index() {
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-5xl px-6 py-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Pill className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary ring-1 ring-primary/20">
+              <img
+                src="/ams-logo.png"
+                alt="AMS"
+                width={40}
+                height={40}
+                className="h-full w-full object-contain"
+              />
             </div>
             <div>
               <h1 className="text-xl font-semibold tracking-tight text-foreground">
