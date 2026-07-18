@@ -140,9 +140,36 @@ function Index() {
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search ingredients, indications, dosing, trials… (e.g. PCOS NAC, CoQ10 motility)"
-              className="h-14 rounded-xl border-input pl-12 pr-4 text-base shadow-sm focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="Search by concept or keyword — e.g. 'low ovarian reserve', 'poor responder', 'D-mannose UTI'"
+              className="h-14 rounded-xl border-input pl-12 pr-32 text-base shadow-sm focus-visible:ring-2 focus-visible:ring-ring"
             />
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                  embedsReady && qVec
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-border bg-muted text-muted-foreground"
+                }`}
+                title={
+                  embedsReady
+                    ? qVec
+                      ? "Semantic + keyword search active"
+                      : embedding
+                      ? "Computing semantic vector…"
+                      : "Keyword search"
+                    : "Loading semantic index…"
+                }
+              >
+                <Sparkles className="h-3 w-3" />
+                {embedsReady
+                  ? qVec
+                    ? "Semantic"
+                    : embedding
+                    ? "…"
+                    : "Keyword"
+                  : "Loading"}
+              </span>
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
