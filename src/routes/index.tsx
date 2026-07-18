@@ -1,10 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { Search, FileText, BookOpen } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { Search, FileText, BookOpen, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { search, getAllProducts, totalChunks } from "@/lib/search";
+import {
+  hybridSearch,
+  getAllProducts,
+  totalChunks,
+  loadEmbeddings,
+} from "@/lib/search";
+import { embedQuery } from "@/lib/embed.functions";
 import { Highlight } from "@/components/Highlight";
 import { getProductImage } from "@/data/product-images";
 
@@ -51,13 +58,47 @@ export const Route = createFileRoute("/")({
 function Index() {
   const [query, setQuery] = useState("");
   const [productFilter, setProductFilter] = useState<string | null>(null);
+  const [qVec, setQVec] = useState<Float32Array | null>(null);
+  const [embedsReady, setEmbedsReady] = useState(false);
+  const [embedding, setEmbedding] = useState(false);
+  const embedFn = useServerFn(embedQuery);
+  const seqRef = useRef(0);
+
+  // Preload embedding matrix once
+  useEffect(() => {
+    loadEmbeddings()
+      .then(() => setEmbedsReady(true))
+      .catch(() => setEmbedsReady(false));
+  }, []);
+
+  // Debounced query embedding
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setQVec(null);
+      return;
+    }
+    const mySeq = ++seqRef.current;
+    setEmbedding(true);
+    const handle = setTimeout(async () => {
+      try {
+        const { vec } = await embedFn({ data: { query: q } });
+        if (mySeq === seqRef.current) setQVec(new Float32Array(vec));
+      } catch {
+        if (mySeq === seqRef.current) setQVec(null);
+      } finally {
+        if (mySeq === seqRef.current) setEmbedding(false);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [query, embedFn]);
 
   const products = useMemo(() => getAllProducts(), []);
   const results = useMemo(() => {
     if (!query.trim()) return [];
-    const r = search(query, 80);
+    const r = hybridSearch(query, embedsReady ? qVec : null, 80);
     return productFilter ? r.filter((x) => x.product === productFilter) : r;
-  }, [query, productFilter]);
+  }, [query, productFilter, qVec, embedsReady]);
 
   const terms = useMemo(
     () =>
@@ -99,9 +140,36 @@ function Index() {
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search ingredients, indications, dosing, trials… (e.g. PCOS NAC, CoQ10 motility)"
-              className="h-14 rounded-xl border-input pl-12 pr-4 text-base shadow-sm focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="Search by concept or keyword — e.g. 'low ovarian reserve', 'poor responder', 'D-mannose UTI'"
+              className="h-14 rounded-xl border-input pl-12 pr-32 text-base shadow-sm focus-visible:ring-2 focus-visible:ring-ring"
             />
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                  embedsReady && qVec
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-border bg-muted text-muted-foreground"
+                }`}
+                title={
+                  embedsReady
+                    ? qVec
+                      ? "Semantic + keyword search active"
+                      : embedding
+                      ? "Computing semantic vector…"
+                      : "Keyword search"
+                    : "Loading semantic index…"
+                }
+              >
+                <Sparkles className="h-3 w-3" />
+                {embedsReady
+                  ? qVec
+                    ? "Semantic"
+                    : embedding
+                    ? "…"
+                    : "Keyword"
+                  : "Loading"}
+              </span>
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
