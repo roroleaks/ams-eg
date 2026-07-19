@@ -108,6 +108,36 @@ function Index() {
     return productFilter ? r.filter((x) => x.product === productFilter) : r;
   }, [query, productFilter, qVec, embedsReady]);
 
+  // Reset summary when query/filter changes
+  useEffect(() => {
+    setSummary(null);
+    setSummaryError(null);
+  }, [query, productFilter]);
+
+  async function handleSummarize() {
+    if (!results.length || summarizing) return;
+    setSummarizing(true);
+    setSummaryError(null);
+    try {
+      const passages = results.slice(0, 20).map((r) => ({
+        product: r.product,
+        section: r.section,
+        page: r.page,
+        sourceName: r.sourceName ?? null,
+        text: r.text.slice(0, 900),
+      }));
+      const { markdown } = await summarizeFn({
+        data: { query, passages },
+      });
+      setSummary(markdown);
+    } catch (e) {
+      setSummaryError(e instanceof Error ? e.message : "Failed to summarize");
+    } finally {
+      setSummarizing(false);
+    }
+  }
+
+
   const terms = useMemo(
     () =>
       query
