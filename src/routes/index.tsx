@@ -286,14 +286,61 @@ function Index() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex items-center justify-between text-sm text-muted-foreground">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
               <span>
                 {results.length} passage{results.length === 1 ? "" : "s"} found
               </span>
-              <span className="text-xs">
-                Searched {totalChunks()} passages · ranked by relevance
-              </span>
+              <div className="flex items-center gap-3">
+                <Button
+                  size="sm"
+                  onClick={handleSummarize}
+                  disabled={summarizing}
+                  className="h-8 gap-1.5"
+                >
+                  {summarizing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-3.5 w-3.5" />
+                  )}
+                  {summarizing ? "Summarizing…" : summary ? "Regenerate summary" : "Summary"}
+                </Button>
+                <span className="text-xs">
+                  Searched {totalChunks()} passages
+                </span>
+              </div>
             </div>
+
+            {summaryError && (
+              <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                {summaryError}
+              </div>
+            )}
+
+            {summary && (
+              <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                    <Sparkles className="h-4 w-4" />
+                    AI Clinical Briefing
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSummary(null)}
+                    className="text-muted-foreground hover:text-foreground"
+                    aria-label="Dismiss summary"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-headings:text-foreground prose-h2:text-base prose-h2:font-semibold prose-p:text-foreground/90 prose-li:text-foreground/90 prose-strong:text-foreground">
+                  <ReactMarkdown>{summary}</ReactMarkdown>
+                </div>
+                <p className="mt-4 border-t border-primary/10 pt-3 text-[11px] text-muted-foreground">
+                  AI-generated from the ranked passages below. Always verify against the cited sources.
+                </p>
+              </div>
+            )}
+
             <ol className="space-y-3">
               {results.map((r, i) => {
                 const img = getProductImage(r.product);
