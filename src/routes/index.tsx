@@ -281,17 +281,6 @@ function Index() {
                             {r.product}
                           </Badge>
                         )}
-                        {r.section && r.section !== r.text && (
-                          <Badge variant="secondary" className="font-normal">
-                            <BookOpen className="mr-1 h-3 w-3" />
-                            {r.section}
-                          </Badge>
-                        )}
-                        {r.page != null && (
-                          <span className="inline-flex items-center gap-1 text-muted-foreground">
-                            <FileText className="h-3 w-3" /> Page {r.page}
-                          </span>
-                        )}
                         <span className="ml-auto text-muted-foreground/70">
                           relevance {r.score.toFixed(2)}
                         </span>
@@ -299,6 +288,39 @@ function Index() {
                       <p className="text-[15px] leading-relaxed text-foreground">
                         <Highlight text={r.text} terms={terms} />
                       </p>
+                      {(r.sourceName || r.section || r.page != null) && (
+                        <a
+                          href={
+                            r.sourceFile
+                              ? `${r.sourceFile}${r.page != null ? `#page=${r.page}` : ""}`
+                              : "#"
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex flex-wrap items-center gap-1.5 text-xs text-primary hover:underline"
+                          title="Open source PDF at this page"
+                        >
+                          <BookOpen className="h-3 w-3" />
+                          <span className="font-medium">
+                            {r.sourceName ?? "Source"}
+                          </span>
+                          {r.section && r.section !== r.text && (
+                            <>
+                              <span className="text-muted-foreground">·</span>
+                              <span className="text-foreground/80">{r.section}</span>
+                            </>
+                          )}
+                          {r.page != null && (
+                            <>
+                              <span className="text-muted-foreground">·</span>
+                              <span className="inline-flex items-center gap-1">
+                                <FileText className="h-3 w-3" /> p. {r.page}
+                              </span>
+                            </>
+                          )}
+                        </a>
+                      )}
+
                     </div>
                   </li>
                 );

@@ -6,7 +6,11 @@ export interface Chunk {
   product: string | null;
   section: string | null;
   text: string;
+  sourceId?: string;
+  sourceName?: string;
+  sourceFile?: string;
 }
+
 
 export interface SearchResult extends Chunk {
   score: number;
