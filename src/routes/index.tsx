@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Search, FileText, BookOpen, Sparkles } from "lucide-react";
+import { Search, FileText, BookOpen, Sparkles, Wand2, Loader2, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,8 +13,10 @@ import {
   loadEmbeddings,
 } from "@/lib/search";
 import { embedQuery } from "@/lib/embed.functions";
+import { summarizeResults } from "@/lib/summarize.functions";
 import { Highlight } from "@/components/Highlight";
 import { getProductImage } from "@/data/product-images";
+
 
 const COMPLAINTS: string[] = [
   "PCOS",
