@@ -65,7 +65,12 @@ function Index() {
   const [embedsReady, setEmbedsReady] = useState(false);
   const [embedding, setEmbedding] = useState(false);
   const embedFn = useServerFn(embedQuery);
+  const summarizeFn = useServerFn(summarizeResults);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const seqRef = useRef(0);
+
 
   // Preload embedding matrix once
   useEffect(() => {
