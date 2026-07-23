@@ -69,10 +69,37 @@ function Index() {
   const [embedding, setEmbedding] = useState(false);
   const embedFn = useServerFn(embedQuery);
   const summarizeFn = useServerFn(summarizeResults);
+  const logFn = useServerFn(logSearch);
+  const isAdminServer = useServerFn(isAdminFn);
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [session, setSession] = useState<{ email?: string } | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const seqRef = useRef(0);
+  const lastLoggedRef = useRef<string>("");
+
+  // Track auth session
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        setSession({ email: data.user.email });
+        isAdminServer().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
+      }
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        setSession(s?.user ? { email: s.user.email } : null);
+        if (s?.user) {
+          isAdminServer().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
+        } else {
+          setIsAdmin(false);
+        }
+      }
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [isAdminServer]);
+
 
 
   // Preload embedding matrix once
