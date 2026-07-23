@@ -197,23 +197,54 @@ function Index() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-5xl px-6 py-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary ring-1 ring-primary/20">
-              <img
-                src="/ams-logo.png"
-                alt="AMS"
-                width={40}
-                height={40}
-                className="h-full w-full object-contain"
-              />
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary ring-1 ring-primary/20">
+                <img
+                  src="/ams-logo.png"
+                  alt="AMS"
+                  width={40}
+                  height={40}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight text-foreground">
+                  AMS Clinical Reference
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  Searchable product knowledge for healthcare professionals
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                AMS Clinical Reference
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Searchable product knowledge for healthcare professionals
-              </p>
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <Link to="/admin">
+                  <Button variant="outline" size="sm">
+                    <ShieldCheck className="h-4 w-4 mr-1" /> Admin
+                  </Button>
+                </Link>
+              )}
+              {session ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    setSession(null);
+                    setIsAdmin(false);
+                  }}
+                  title={session.email}
+                >
+                  <LogOut className="h-4 w-4 mr-1" /> Sign out
+                </Button>
+              ) : (
+                <Link to="/auth">
+                  <Button variant="ghost" size="sm">
+                    <LogIn className="h-4 w-4 mr-1" /> Sign in
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
 
