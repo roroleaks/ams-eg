@@ -144,6 +144,21 @@ function Index() {
     setSummaryError(null);
   }, [query, productFilter]);
 
+  // Log searches (debounced, no dupes)
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || q.length < 2) return;
+    const handle = setTimeout(() => {
+      const key = `${q}|${results.length}`;
+      if (lastLoggedRef.current === key) return;
+      lastLoggedRef.current = key;
+      const mode = embedsReady && qVec ? "hybrid" : "keyword";
+      logFn({ data: { query: q, result_count: results.length, mode } }).catch(() => {});
+    }, 900);
+    return () => clearTimeout(handle);
+  }, [query, results.length, embedsReady, qVec, logFn]);
+
+
   async function handleSummarize() {
     if (!results.length || summarizing) return;
     setSummarizing(true);
