@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Search, FileText, BookOpen, Sparkles, Wand2, Loader2, X } from "lucide-react";
+import { Search, FileText, BookOpen, Sparkles, Wand2, Loader2, X, ShieldCheck, LogIn, LogOut } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,9 @@ import {
 } from "@/lib/search";
 import { embedQuery } from "@/lib/embed.functions";
 import { summarizeResults } from "@/lib/summarize.functions";
+import { logSearch } from "@/lib/analytics.functions";
+import { isAdmin as isAdminFn } from "@/lib/admin.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { Highlight } from "@/components/Highlight";
 import { getProductImage } from "@/data/product-images";
 
