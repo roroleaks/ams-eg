@@ -207,14 +207,17 @@ async function embedBatch(texts: string[], apiKey: string): Promise<number[][]> 
   return j.data.map((d) => d.embedding);
 }
 
-function packEmbedding(vec: number[]): Uint8Array {
-  // L2 normalize then pack as Float32
+function packEmbedding(vec: number[]): string {
+  // L2 normalize, pack as Float32 little-endian, encode as \x hex for bytea
   let n = 0;
   for (let i = 0; i < vec.length; i++) n += vec[i] * vec[i];
   n = Math.sqrt(n) || 1;
   const arr = new Float32Array(vec.length);
   for (let i = 0; i < vec.length; i++) arr[i] = vec[i] / n;
-  return new Uint8Array(arr.buffer);
+  const bytes = new Uint8Array(arr.buffer);
+  let hex = "\\x";
+  for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, "0");
+  return hex;
 }
 
 export const reindexDocument = createServerFn({ method: "POST" })
