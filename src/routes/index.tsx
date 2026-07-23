@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Search, FileText, BookOpen, Sparkles, Wand2, Loader2, X } from "lucide-react";
+import { Search, FileText, BookOpen, Sparkles, Wand2, Loader2, X, ShieldCheck, LogIn, LogOut } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,9 @@ import {
 } from "@/lib/search";
 import { embedQuery } from "@/lib/embed.functions";
 import { summarizeResults } from "@/lib/summarize.functions";
+import { logSearch } from "@/lib/analytics.functions";
+import { isAdmin as isAdminFn } from "@/lib/admin.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { Highlight } from "@/components/Highlight";
 import { getProductImage } from "@/data/product-images";
 
@@ -66,10 +69,37 @@ function Index() {
   const [embedding, setEmbedding] = useState(false);
   const embedFn = useServerFn(embedQuery);
   const summarizeFn = useServerFn(summarizeResults);
+  const logFn = useServerFn(logSearch);
+  const isAdminServer = useServerFn(isAdminFn);
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [session, setSession] = useState<{ email?: string } | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const seqRef = useRef(0);
+  const lastLoggedRef = useRef<string>("");
+
+  // Track auth session
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        setSession({ email: data.user.email });
+        isAdminServer().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
+      }
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        setSession(s?.user ? { email: s.user.email } : null);
+        if (s?.user) {
+          isAdminServer().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
+        } else {
+          setIsAdmin(false);
+        }
+      }
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [isAdminServer]);
+
 
 
   // Preload embedding matrix once
@@ -114,6 +144,21 @@ function Index() {
     setSummaryError(null);
   }, [query, productFilter]);
 
+  // Log searches (debounced, no dupes)
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || q.length < 2) return;
+    const handle = setTimeout(() => {
+      const key = `${q}|${results.length}`;
+      if (lastLoggedRef.current === key) return;
+      lastLoggedRef.current = key;
+      const mode = embedsReady && qVec ? "hybrid" : "keyword";
+      logFn({ data: { query: q, result_count: results.length, mode } }).catch(() => {});
+    }, 900);
+    return () => clearTimeout(handle);
+  }, [query, results.length, embedsReady, qVec, logFn]);
+
+
   async function handleSummarize() {
     if (!results.length || summarizing) return;
     setSummarizing(true);
@@ -152,23 +197,54 @@ function Index() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-5xl px-6 py-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary ring-1 ring-primary/20">
-              <img
-                src="/ams-logo.png"
-                alt="AMS"
-                width={40}
-                height={40}
-                className="h-full w-full object-contain"
-              />
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary ring-1 ring-primary/20">
+                <img
+                  src="/ams-logo.png"
+                  alt="AMS"
+                  width={40}
+                  height={40}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight text-foreground">
+                  AMS Clinical Reference
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  Searchable product knowledge for healthcare professionals
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                AMS Clinical Reference
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Searchable product knowledge for healthcare professionals
-              </p>
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <Link to="/admin">
+                  <Button variant="outline" size="sm">
+                    <ShieldCheck className="h-4 w-4 mr-1" /> Admin
+                  </Button>
+                </Link>
+              )}
+              {session ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    setSession(null);
+                    setIsAdmin(false);
+                  }}
+                  title={session.email}
+                >
+                  <LogOut className="h-4 w-4 mr-1" /> Sign out
+                </Button>
+              ) : (
+                <Link to="/auth">
+                  <Button variant="ghost" size="sm">
+                    <LogIn className="h-4 w-4 mr-1" /> Sign in
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
 

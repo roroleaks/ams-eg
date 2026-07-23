@@ -14,16 +14,230 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      document_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          created_at: string
+          document_id: string
+          embedding: string | null
+          id: string
+          page: number | null
+        }
+        Insert: {
+          chunk_index: number
+          content: string
+          created_at?: string
+          document_id: string
+          embedding?: string | null
+          id?: string
+          page?: number | null
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          created_at?: string
+          document_id?: string
+          embedding?: string | null
+          id?: string
+          page?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          chunk_count: number
+          created_at: string
+          filename: string
+          id: string
+          indexed_at: string | null
+          page_count: number | null
+          status: Database["public"]["Enums"]["doc_status"]
+          status_message: string | null
+          storage_path: string
+          title: string
+          updated_at: string
+          uploaded_by: string | null
+          version: number
+        }
+        Insert: {
+          chunk_count?: number
+          created_at?: string
+          filename: string
+          id?: string
+          indexed_at?: string | null
+          page_count?: number | null
+          status?: Database["public"]["Enums"]["doc_status"]
+          status_message?: string | null
+          storage_path: string
+          title: string
+          updated_at?: string
+          uploaded_by?: string | null
+          version?: number
+        }
+        Update: {
+          chunk_count?: number
+          created_at?: string
+          filename?: string
+          id?: string
+          indexed_at?: string | null
+          page_count?: number | null
+          status?: Database["public"]["Enums"]["doc_status"]
+          status_message?: string | null
+          storage_path?: string
+          title?: string
+          updated_at?: string
+          uploaded_by?: string | null
+          version?: number
+        }
+        Relationships: []
+      }
+      indexing_logs: {
+        Row: {
+          action: string
+          created_at: string
+          created_by: string | null
+          document_id: string | null
+          duration_ms: number | null
+          id: string
+          message: string | null
+          status: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          created_by?: string | null
+          document_id?: string | null
+          duration_ms?: number | null
+          id?: string
+          message?: string | null
+          status: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          created_by?: string | null
+          document_id?: string | null
+          duration_ms?: number | null
+          id?: string
+          message?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "indexing_logs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      search_analytics: {
+        Row: {
+          created_at: string
+          id: string
+          mode: string | null
+          query: string
+          result_count: number
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mode?: string | null
+          query: string
+          result_count?: number
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mode?: string | null
+          query?: string
+          result_count?: number
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_permissions: {
+        Row: {
+          can_download: boolean
+          can_search: boolean
+          can_summarize: boolean
+          id: string
+          notes: string | null
+          updated_at: string
+          updated_by: string | null
+          user_id: string
+        }
+        Insert: {
+          can_download?: boolean
+          can_search?: boolean
+          can_summarize?: boolean
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          user_id: string
+        }
+        Update: {
+          can_download?: boolean
+          can_search?: boolean
+          can_summarize?: boolean
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
+      doc_status: "pending" | "processing" | "indexed" | "failed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +364,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+      doc_status: ["pending", "processing", "indexed", "failed"],
+    },
   },
 } as const
