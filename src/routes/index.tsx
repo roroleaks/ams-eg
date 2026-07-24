@@ -290,7 +290,29 @@ function Index() {
             </div>
           </div>
 
-          <div className="relative mt-6">
+          <div className="mt-5 flex flex-wrap items-center gap-4 text-sm">
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 hover:bg-accent">
+              <input
+                type="checkbox"
+                checked={useGuidelines}
+                onChange={(e) => setUseGuidelines(e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              <span className="font-medium">Search Guideline Library</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 hover:bg-accent">
+              <input
+                type="checkbox"
+                checked={useLiterature}
+                onChange={(e) => setUseLiterature(e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              <span className="font-medium">Search Recent Medical Literature</span>
+              <span className="text-xs text-muted-foreground">(PubMed · Europe PMC, last 5y)</span>
+            </label>
+          </div>
+
+          <div className="relative mt-4">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
             <Input
               autoFocus
