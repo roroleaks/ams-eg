@@ -70,11 +70,15 @@ function Index() {
   const [embedding, setEmbedding] = useState(false);
   const embedFn = useServerFn(embedQuery);
   const summarizeFn = useServerFn(summarizeResults);
+  const literatureFn = useServerFn(searchLiterature);
   const logFn = useServerFn(logSearch);
   const isAdminServer = useServerFn(isAdminFn);
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [literature, setLiterature] = useState<LiteratureItem[]>([]);
+  const [useGuidelines, setUseGuidelines] = useState(true);
+  const [useLiterature, setUseLiterature] = useState(true);
   const [session, setSession] = useState<{ email?: string } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const seqRef = useRef(0);
