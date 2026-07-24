@@ -14,6 +14,7 @@ import {
 } from "@/lib/search";
 import { embedQuery } from "@/lib/embed.functions";
 import { summarizeResults } from "@/lib/summarize.functions";
+import { searchLiterature, type LiteratureItem } from "@/lib/literature.functions";
 import { logSearch } from "@/lib/analytics.functions";
 import { isAdmin as isAdminFn } from "@/lib/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
