@@ -37,6 +37,16 @@ function rankPubType(pubType: string): number {
   return 5;
 }
 
+type CacheEntry = { at: number; value: { items: LiteratureItem[]; total: number } };
+const TTL_MS = 15 * 60 * 1000; // 15 min
+const MAX_ENTRIES = 200;
+const cache = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<{ items: LiteratureItem[]; total: number }>>();
+
+function normalizeQuery(q: string): string {
+  return q.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 export const searchLiterature = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<{ items: LiteratureItem[]; total: number }> => {
@@ -45,6 +55,14 @@ export const searchLiterature = createServerFn({ method: "POST" })
     const now = new Date();
     const fromYear = now.getFullYear() - yearsBack;
     const toYear = now.getFullYear();
+
+    const cacheKey = `${normalizeQuery(data.query)}|${yearsBack}|${limit}`;
+    const hit = cache.get(cacheKey);
+    if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
+    const pending = inflight.get(cacheKey);
+    if (pending) return pending;
+
+    const run = (async () => {
 
     // Europe PMC query: peer-reviewed sources (MED = PubMed, PMC = PubMed Central),
     // English, human studies preferred, recent, filter blogs/preprints out.
