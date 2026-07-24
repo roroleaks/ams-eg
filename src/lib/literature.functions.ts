@@ -129,5 +129,20 @@ export const searchLiterature = createServerFn({ method: "POST" })
       .sort((a, b) => a.evidenceRank - b.evidenceRank || Number(b.year || 0) - Number(a.year || 0))
       .slice(0, limit);
 
-    return { items: chosen, total: j.hitCount ?? chosen.length };
+      return { items: chosen, total: j.hitCount ?? chosen.length };
+    })();
+
+    inflight.set(cacheKey, run);
+    try {
+      const value = await run;
+      cache.set(cacheKey, { at: Date.now(), value });
+      if (cache.size > MAX_ENTRIES) {
+        // Evict oldest
+        const oldestKey = cache.keys().next().value;
+        if (oldestKey) cache.delete(oldestKey);
+      }
+      return value;
+    } finally {
+      inflight.delete(cacheKey);
+    }
   });
