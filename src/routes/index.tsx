@@ -417,12 +417,41 @@ function Index() {
         {!query.trim() ? (
           <EmptyState onPick={setQuery} />
         ) : results.length === 0 ? (
-          <div className="rounded-lg border border-border bg-card p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              No passages found for{" "}
-              <span className="font-medium text-foreground">"{query}"</span>
-              {productFilter ? ` in ${productFilter}` : ""}.
-            </p>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-card p-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                No passages found in the guideline library for{" "}
+                <span className="font-medium text-foreground">"{query}"</span>
+                {productFilter ? ` in ${productFilter}` : ""}.
+              </p>
+              {useLiterature && (
+                <Button
+                  size="sm"
+                  onClick={handleSummarize}
+                  disabled={summarizing}
+                  className="mt-4 h-8 gap-1.5"
+                >
+                  {summarizing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-3.5 w-3.5" />
+                  )}
+                  {summarizing ? "Searching literature…" : "Search recent literature"}
+                </Button>
+              )}
+            </div>
+            {summaryError && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                {summaryError}
+              </div>
+            )}
+            {summary && (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-5 shadow-sm">
+                <div className="prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-h2:text-base prose-h2:font-semibold">
+                  <ReactMarkdown>{summary}</ReactMarkdown>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <>
