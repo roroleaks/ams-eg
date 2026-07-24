@@ -147,6 +147,7 @@ function Index() {
   useEffect(() => {
     setSummary(null);
     setSummaryError(null);
+    setLiterature([]);
   }, [query, productFilter]);
 
   // Log searches (debounced, no dupes)
@@ -165,19 +166,55 @@ function Index() {
 
 
   async function handleSummarize() {
-    if (!results.length || summarizing) return;
+    if (summarizing) return;
+    if (!useGuidelines && !useLiterature) {
+      setSummaryError("Enable at least one evidence source.");
+      return;
+    }
+    if (useGuidelines && !results.length && !useLiterature) return;
     setSummarizing(true);
     setSummaryError(null);
     try {
-      const passages = results.slice(0, 20).map((r) => ({
-        product: r.product,
-        section: r.section,
-        page: r.page,
-        sourceName: r.sourceName ?? null,
-        text: r.text.slice(0, 900),
-      }));
+      const passages = useGuidelines
+        ? results.slice(0, 20).map((r) => ({
+            product: r.product,
+            section: r.section,
+            page: r.page,
+            sourceName: r.sourceName ?? null,
+            text: r.text.slice(0, 900),
+          }))
+        : [];
+
+      let lit: LiteratureItem[] = [];
+      if (useLiterature) {
+        try {
+          const { items } = await literatureFn({ data: { query, yearsBack: 5, limit: 10 } });
+          lit = items;
+          setLiterature(items);
+        } catch (e) {
+          console.warn("literature search failed", e);
+          setLiterature([]);
+        }
+      } else {
+        setLiterature([]);
+      }
+
       const { markdown } = await summarizeFn({
-        data: { query, passages },
+        data: {
+          query,
+          passages,
+          literature: lit.map((l) => ({
+            title: l.title,
+            authors: l.authors,
+            journal: l.journal,
+            year: l.year,
+            doi: l.doi,
+            pmid: l.pmid,
+            pubType: l.pubType,
+          })),
+          useGuidelines,
+          useLiterature,
+        },
       });
       setSummary(markdown);
     } catch (e) {
