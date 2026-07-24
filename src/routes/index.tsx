@@ -14,6 +14,7 @@ import {
 } from "@/lib/search";
 import { embedQuery } from "@/lib/embed.functions";
 import { summarizeResults } from "@/lib/summarize.functions";
+import { searchLiterature, type LiteratureItem } from "@/lib/literature.functions";
 import { logSearch } from "@/lib/analytics.functions";
 import { isAdmin as isAdminFn } from "@/lib/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -69,11 +70,15 @@ function Index() {
   const [embedding, setEmbedding] = useState(false);
   const embedFn = useServerFn(embedQuery);
   const summarizeFn = useServerFn(summarizeResults);
+  const literatureFn = useServerFn(searchLiterature);
   const logFn = useServerFn(logSearch);
   const isAdminServer = useServerFn(isAdminFn);
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [literature, setLiterature] = useState<LiteratureItem[]>([]);
+  const [useGuidelines, setUseGuidelines] = useState(true);
+  const [useLiterature, setUseLiterature] = useState(true);
   const [session, setSession] = useState<{ email?: string } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const seqRef = useRef(0);
@@ -142,6 +147,7 @@ function Index() {
   useEffect(() => {
     setSummary(null);
     setSummaryError(null);
+    setLiterature([]);
   }, [query, productFilter]);
 
   // Log searches (debounced, no dupes)
@@ -160,19 +166,55 @@ function Index() {
 
 
   async function handleSummarize() {
-    if (!results.length || summarizing) return;
+    if (summarizing) return;
+    if (!useGuidelines && !useLiterature) {
+      setSummaryError("Enable at least one evidence source.");
+      return;
+    }
+    if (useGuidelines && !results.length && !useLiterature) return;
     setSummarizing(true);
     setSummaryError(null);
     try {
-      const passages = results.slice(0, 20).map((r) => ({
-        product: r.product,
-        section: r.section,
-        page: r.page,
-        sourceName: r.sourceName ?? null,
-        text: r.text.slice(0, 900),
-      }));
+      const passages = useGuidelines
+        ? results.slice(0, 20).map((r) => ({
+            product: r.product,
+            section: r.section,
+            page: r.page,
+            sourceName: r.sourceName ?? null,
+            text: r.text.slice(0, 900),
+          }))
+        : [];
+
+      let lit: LiteratureItem[] = [];
+      if (useLiterature) {
+        try {
+          const { items } = await literatureFn({ data: { query, yearsBack: 5, limit: 10 } });
+          lit = items;
+          setLiterature(items);
+        } catch (e) {
+          console.warn("literature search failed", e);
+          setLiterature([]);
+        }
+      } else {
+        setLiterature([]);
+      }
+
       const { markdown } = await summarizeFn({
-        data: { query, passages },
+        data: {
+          query,
+          passages,
+          literature: lit.map((l) => ({
+            title: l.title,
+            authors: l.authors,
+            journal: l.journal,
+            year: l.year,
+            doi: l.doi,
+            pmid: l.pmid,
+            pubType: l.pubType,
+          })),
+          useGuidelines,
+          useLiterature,
+        },
       });
       setSummary(markdown);
     } catch (e) {
@@ -248,7 +290,29 @@ function Index() {
             </div>
           </div>
 
-          <div className="relative mt-6">
+          <div className="mt-5 flex flex-wrap items-center gap-4 text-sm">
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 hover:bg-accent">
+              <input
+                type="checkbox"
+                checked={useGuidelines}
+                onChange={(e) => setUseGuidelines(e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              <span className="font-medium">Search Guideline Library</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 hover:bg-accent">
+              <input
+                type="checkbox"
+                checked={useLiterature}
+                onChange={(e) => setUseLiterature(e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              <span className="font-medium">Search Recent Medical Literature</span>
+              <span className="text-xs text-muted-foreground">(PubMed · Europe PMC, last 5y)</span>
+            </label>
+          </div>
+
+          <div className="relative mt-4">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
             <Input
               autoFocus
@@ -353,12 +417,41 @@ function Index() {
         {!query.trim() ? (
           <EmptyState onPick={setQuery} />
         ) : results.length === 0 ? (
-          <div className="rounded-lg border border-border bg-card p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              No passages found for{" "}
-              <span className="font-medium text-foreground">"{query}"</span>
-              {productFilter ? ` in ${productFilter}` : ""}.
-            </p>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-card p-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                No passages found in the guideline library for{" "}
+                <span className="font-medium text-foreground">"{query}"</span>
+                {productFilter ? ` in ${productFilter}` : ""}.
+              </p>
+              {useLiterature && (
+                <Button
+                  size="sm"
+                  onClick={handleSummarize}
+                  disabled={summarizing}
+                  className="mt-4 h-8 gap-1.5"
+                >
+                  {summarizing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-3.5 w-3.5" />
+                  )}
+                  {summarizing ? "Searching literature…" : "Search recent literature"}
+                </Button>
+              )}
+            </div>
+            {summaryError && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                {summaryError}
+              </div>
+            )}
+            {summary && (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-5 shadow-sm">
+                <div className="prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-h2:text-base prose-h2:font-semibold">
+                  <ReactMarkdown>{summary}</ReactMarkdown>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -414,6 +507,49 @@ function Index() {
                 <p className="mt-4 border-t border-primary/10 pt-3 text-[11px] text-muted-foreground">
                   AI-generated from the ranked passages below. Always verify against the cited sources.
                 </p>
+              </div>
+            )}
+
+            {literature.length > 0 && (
+              <div className="mb-6 rounded-xl border border-border bg-card p-5 shadow-sm">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <BookOpen className="h-4 w-4 text-primary" />
+                  Recent peer-reviewed literature ({literature.length})
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    PubMed · Europe PMC · last 5 years
+                  </span>
+                </div>
+                <ol className="space-y-3">
+                  {literature.map((l, i) => (
+                    <li key={i} className="rounded-md border border-border/60 bg-background p-3">
+                      <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono font-medium text-primary">
+                          L{i + 1}
+                        </span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
+                          {l.pubType.split(";")[0]}
+                        </span>
+                        <span className="text-muted-foreground">{l.year}</span>
+                      </div>
+                      <a
+                        href={l.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-foreground hover:text-primary hover:underline"
+                      >
+                        {l.title}
+                      </a>
+                      {l.authors && (
+                        <p className="mt-1 text-xs text-muted-foreground">{l.authors}</p>
+                      )}
+                      <p className="mt-1 text-xs italic text-muted-foreground">
+                        {l.journal}
+                        {l.doi && <> · DOI: <span className="font-mono">{l.doi}</span></>}
+                        {l.pmid && <> · PMID: <span className="font-mono">{l.pmid}</span></>}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
               </div>
             )}
 
