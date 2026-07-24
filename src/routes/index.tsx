@@ -481,6 +481,49 @@ function Index() {
               </div>
             )}
 
+            {literature.length > 0 && (
+              <div className="mb-6 rounded-xl border border-border bg-card p-5 shadow-sm">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <BookOpen className="h-4 w-4 text-primary" />
+                  Recent peer-reviewed literature ({literature.length})
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    PubMed · Europe PMC · last 5 years
+                  </span>
+                </div>
+                <ol className="space-y-3">
+                  {literature.map((l, i) => (
+                    <li key={i} className="rounded-md border border-border/60 bg-background p-3">
+                      <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono font-medium text-primary">
+                          L{i + 1}
+                        </span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
+                          {l.pubType.split(";")[0]}
+                        </span>
+                        <span className="text-muted-foreground">{l.year}</span>
+                      </div>
+                      <a
+                        href={l.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-foreground hover:text-primary hover:underline"
+                      >
+                        {l.title}
+                      </a>
+                      {l.authors && (
+                        <p className="mt-1 text-xs text-muted-foreground">{l.authors}</p>
+                      )}
+                      <p className="mt-1 text-xs italic text-muted-foreground">
+                        {l.journal}
+                        {l.doi && <> · DOI: <span className="font-mono">{l.doi}</span></>}
+                        {l.pmid && <> · PMID: <span className="font-mono">{l.pmid}</span></>}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
             <ol className="space-y-3">
               {results.map((r, i) => {
                 const img = getProductImage(r.product);
