@@ -151,10 +151,10 @@ function Index() {
     setLiterature([]);
   }, [query, productFilter]);
 
-  // Log searches (debounced, no dupes)
+  // Log searches (debounced, no dupes) — only for signed-in users
   useEffect(() => {
     const q = query.trim();
-    if (!q || q.length < 2) return;
+    if (!q || q.length < 2 || !session) return;
     const handle = setTimeout(() => {
       const key = `${q}|${results.length}`;
       if (lastLoggedRef.current === key) return;
@@ -163,7 +163,8 @@ function Index() {
       logFn({ data: { query: q, result_count: results.length, mode } }).catch(() => {});
     }, 900);
     return () => clearTimeout(handle);
-  }, [query, results.length, embedsReady, qVec, logFn]);
+  }, [query, results.length, embedsReady, qVec, logFn, session]);
+
 
 
   async function handleSummarize() {
