@@ -114,10 +114,10 @@ function Index() {
       .catch(() => setEmbedsReady(false));
   }, []);
 
-  // Debounced query embedding
+  // Debounced query embedding (requires sign-in)
   useEffect(() => {
     const q = query.trim();
-    if (!q) {
+    if (!q || !session) {
       setQVec(null);
       return;
     }
@@ -134,7 +134,8 @@ function Index() {
       }
     }, 250);
     return () => clearTimeout(handle);
-  }, [query, embedFn]);
+  }, [query, embedFn, session]);
+
 
   const products = useMemo(() => getAllProducts(), []);
   const results = useMemo(() => {
@@ -150,10 +151,10 @@ function Index() {
     setLiterature([]);
   }, [query, productFilter]);
 
-  // Log searches (debounced, no dupes)
+  // Log searches (debounced, no dupes) — only for signed-in users
   useEffect(() => {
     const q = query.trim();
-    if (!q || q.length < 2) return;
+    if (!q || q.length < 2 || !session) return;
     const handle = setTimeout(() => {
       const key = `${q}|${results.length}`;
       if (lastLoggedRef.current === key) return;
@@ -162,16 +163,22 @@ function Index() {
       logFn({ data: { query: q, result_count: results.length, mode } }).catch(() => {});
     }, 900);
     return () => clearTimeout(handle);
-  }, [query, results.length, embedsReady, qVec, logFn]);
+  }, [query, results.length, embedsReady, qVec, logFn, session]);
+
 
 
   async function handleSummarize() {
     if (summarizing) return;
+    if (!session) {
+      setSummaryError("Please sign in to generate a summary.");
+      return;
+    }
     if (!useGuidelines && !useLiterature) {
       setSummaryError("Enable at least one evidence source.");
       return;
     }
     if (useGuidelines && !results.length && !useLiterature) return;
+
     setSummarizing(true);
     setSummaryError(null);
     try {

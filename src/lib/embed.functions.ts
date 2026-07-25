@@ -1,11 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const Input = z.object({ query: z.string().min(1).max(500) });
 
 export const embedQuery = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => Input.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    // Enforce per-user can_search permission (default allow if no row)
+    const { data: perm } = await context.supabase
+      .from("user_permissions")
+      .select("can_search")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (perm && perm.can_search === false) {
+      throw new Error("Search permission is disabled for your account");
+    }
+
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("Missing LOVABLE_API_KEY");
     const res = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
