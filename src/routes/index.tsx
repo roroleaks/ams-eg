@@ -114,10 +114,10 @@ function Index() {
       .catch(() => setEmbedsReady(false));
   }, []);
 
-  // Debounced query embedding
+  // Debounced query embedding (requires sign-in)
   useEffect(() => {
     const q = query.trim();
-    if (!q) {
+    if (!q || !session) {
       setQVec(null);
       return;
     }
@@ -134,7 +134,8 @@ function Index() {
       }
     }, 250);
     return () => clearTimeout(handle);
-  }, [query, embedFn]);
+  }, [query, embedFn, session]);
+
 
   const products = useMemo(() => getAllProducts(), []);
   const results = useMemo(() => {
