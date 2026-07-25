@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "sdk_version": "0.24.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://aqftmrimhjhdnunfrdhi.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "ams-clinical-reference",
+      "version": "0.1.0",
+      "title": "AMS Clinical Reference"
+    },
+    "tools": [
+      {
+        "name": "list_ams_products",
+        "title": "List AMS products",
+        "description": "List the America Medic & Science (AMS) products covered by this knowledge base. Use before search_ams_guidelines when you need the exact product name to filter by.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "search_ams_guidelines",
+        "title": "Search AMS product guidelines",
+        "description": "Full-text search over America Medic & Science (AMS) product monographs and clinical guidelines. Returns ranked passages with product, section, page, and source document. Use to answer clinician questions grounded in AMS product literature.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Clinical question or keywords, e.g. 'PCOS inositol dose' or 'endometriosis MetrioMed'."
+            },
+            "product": {
+              "type": "string",
+              "description": "Optional exact product name filter, e.g. 'FibroMed', 'MFS Plus', 'WFS Plus'."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 8
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "search_medical_literature",
+        "title": "Search recent peer-reviewed medical literature",
+        "description": "Search Europe PMC for recent peer-reviewed medical literature (PubMed + PMC, English, preprints excluded), ranked by evidence strength (guidelines / meta-analyses / systematic reviews first). Returns title, authors, journal, year, DOI, PMID, and abstract.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Clinical topic or PICO-style query."
+            },
+            "yearsBack": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 5
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25,
+              "default": 10
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
@@ -10,11 +10,22 @@ import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — AMS" }] }),
+  validateSearch: (s: Record<string, unknown>) => ({
+    next: typeof s.next === "string" ? s.next : "",
+  }),
   component: AuthPage,
 });
 
+// Only allow same-origin relative paths.
+function safeNext(next: string): string {
+  if (!next.startsWith("/") || next.startsWith("//")) return "/";
+  return next;
+}
+
 function AuthPage() {
-  const navigate = useNavigate();
+  
+  const { next } = Route.useSearch();
+  const dest = safeNext(next || "/");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,9 +35,9 @@ function AuthPage() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) navigate({ to: "/" });
+      if (data.user) window.location.href = dest;
     });
-  }, [navigate]);
+  }, [dest]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,7 +49,7 @@ function AuthPage() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: `${window.location.origin}${dest}` },
         });
         if (error) throw error;
         setInfo("Check your email to confirm your account, then sign in.");
@@ -46,7 +57,7 @@ function AuthPage() {
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        navigate({ to: "/" });
+        window.location.href = dest;
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -58,7 +69,7 @@ function AuthPage() {
   async function onGoogle() {
     setError(null);
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+      redirect_uri: `${window.location.origin}/auth${dest !== "/" ? `?next=${encodeURIComponent(dest)}` : ""}`,
     });
     if (result.error) setError(result.error.message ?? "Google sign-in failed");
   }
