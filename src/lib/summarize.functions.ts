@@ -59,7 +59,7 @@ export const summarizeResults = createServerFn({ method: "POST" })
         ]
           .filter(Boolean)
           .join(" · ");
-        return `[G${i + 1}] (${cite})\n${p.text}`;
+        return `SOURCE ${i + 1} (${cite})\n${p.text}`;
       })
       .join("\n\n");
 
@@ -74,61 +74,86 @@ export const summarizeResults = createServerFn({ method: "POST" })
         ]
           .filter(Boolean)
           .join(" · ");
-        return `[L${i + 1}] "${l.title}" — ${l.authors} (${cite})`;
+        return `STUDY ${i + 1} "${l.title}" — ${l.authors} (${cite})`;
       })
       .join("\n\n");
 
     const haveG = useGuidelines && data.passages.length > 0;
     const haveL = useLiterature && (data.literature?.length ?? 0) > 0;
 
-    const system = `You are a clinical evidence-synthesis assistant for physicians. You have TWO source pools:
-- Guideline passages from indexed product monographs (highest priority), cited as [G#].
-- Recent peer-reviewed literature from PubMed/Europe PMC (secondary), cited as [L#].
+    const today = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
 
-STRICT RULES:
-- Ground every statement in the provided sources. Cite inline with [G1], [L2], etc.
-- NEVER fabricate citations, DOIs, PMIDs, journals, or study findings.
-- If guideline evidence is missing, write exactly: "No indexed guideline evidence was found for this query."
-- If literature is missing, write exactly: "No recent peer-reviewed evidence was identified."
-- If literature CONFLICTS with the guideline, do not hide the guideline. Present both viewpoints and prefix with: "Recent literature reports findings that differ from the current guideline."
-- Keep the guideline recommendation intact even when literature expands or contradicts it.`;
+    const system = `You are a senior clinical evidence-synthesis author writing a formal "Clinical Evidence Report" for physicians. The output must read like a professional medical review article, NOT a retrieval log.
 
-    const user = `Clinician's query: "${data.query}"
+ABSOLUTE FORMATTING RULES:
+- NEVER show retrieval identifiers of any kind in the body: no (G1), [G2], (L3), [R4], "Source 5", "Study 2", "Chunk", "Passage", "Vector Score", "Similarity", or similar internal metadata.
+- NEVER place URLs, DOIs, or PMIDs in the body prose. URLs appear ONLY in the final "Useful Links" section. DOI/PMID appear ONLY in the References section.
+- Write clean, flowing medical prose. Do NOT interrupt sentences or paragraphs with reference labels.
+- Ground every clinical statement in the supplied sources; do NOT fabricate studies, authors, DOIs, PMIDs, journals, dosages, or findings.
+- Use professional, neutral medical register.`;
 
-Produce a Markdown briefing with EXACTLY these five ## sections in this order:
+    const user = `Topic (clinician's query): "${data.query}"
+Date generated: ${today}
 
-## Guideline Recommendation
-${haveG
-  ? "Summarize the indexed guideline passages. For each point cite [G#] AND state Guideline name · Year (if available) · Section · Page inline."
-  : 'Write exactly: "No indexed guideline evidence was found for this query."'}
+Produce a Markdown document with EXACTLY this structure and these headings, in this order. Follow every rule precisely.
 
-## Recent Evidence
-${haveL
-  ? "Summarize the recent peer-reviewed literature. For each finding cite [L#] and include the study Title, Authors, Journal, Year, and DOI/PMID inline."
-  : 'Write exactly: "No recent peer-reviewed evidence was identified."'}
+# Clinical Evidence Report
 
-## Agreement Between Sources
-${haveG && haveL
-  ? "State whether the literature ✓ Supports, △ Expands upon, or ✗ Conflicts with the guideline. Explain briefly and cite both [G#] and [L#]."
-  : "State that comparison is not possible because one source pool is empty."}
-
-## Clinical Interpretation
-Practical, prescriber-facing takeaways (patient type, dosing if stated, cautions). Cite everything.
-
-## References
-Numbered list. First list guideline sources as: **[G#]** Guideline name — Section, p. Page.
-Then list literature as: **[L#]** Authors. Title. *Journal*. Year. DOI: xxx. PMID: xxx.
-Only include references that were actually cited above.
+**Topic:** ${data.query}
+**Date Generated:** ${today}
 
 ---
 
-GUIDELINE PASSAGES (${data.passages.length}):
+## Executive Summary
+Write 3–6 sentences summarizing the most important clinical conclusions in flowing prose. No citation tags. No URLs.
+
+## Guideline Recommendations
+${haveG
+  ? `Summarize the recommendations extracted from the indexed guideline sources below. Organize into logical ### subheadings chosen from (only include those relevant to the topic): Diagnosis, Risk Factors, Treatment, Follow-up, Clinical Pearls. Write in professional medical language. Do not repeat information. Absolutely no inline citation tags or source labels — the reader will find sources in the References section.`
+  : `Write exactly: *No indexed guideline evidence was found for this query.*`}
+
+## Recent Medical Evidence
+${haveL
+  ? `Summarize the recent peer-reviewed literature provided below, organized into ### subheadings by study type where applicable (Meta-analyses, Systematic Reviews, Randomized Trials, Cohort Studies). At the end of this section include a short paragraph stating whether recent evidence **Supports**, **Expands**, or **Challenges** the guideline recommendations. No inline citation tags. No URLs.`
+  : `Write exactly: *No recent peer-reviewed literature matching this topic was identified.*\n\nDo not expand further in this section.`}
+
+## Clinical Interpretation
+Provide a practical, evidence-based interpretation for clinicians. Focus on implications for practice, patient selection, limitations, and situations where caution is needed. Do not repeat earlier sections. No citation tags. No URLs.
+
+## Key Clinical Takeaways
+Provide 5–10 concise bullet points with the most important actionable messages. No citation tags. No URLs.
+
+## References
+
+### Indexed Guidelines
+${haveG
+  ? `List every indexed guideline source that was actually used, one per line block, formatted as:\n\nOrganization or Author.\nDocument title.\nEdition or Year (use "n.d." if unknown).\npp. [page numbers].\n\nDeduplicate identical documents by combining page ranges. No URLs here.`
+  : `*None.*`}
+
+### Recent Literature
+${haveL
+  ? `List each cited study in Vancouver style, one per numbered entry:\n\n1. Authors. Title. Journal. Year;Volume:Pages. doi:XXXX. PMID:XXXX.\n\nOmit fields that were not provided. No URLs in this block — URLs go in Useful Links.`
+  : `*None.*`}
+
+## Useful Links
+${haveL
+  ? `List clickable Markdown hyperlinks for the recent literature only, one per line, using these labels when the identifier is available:\n\n- [PubMed](https://pubmed.ncbi.nlm.nih.gov/{PMID}/)\n- [DOI](https://doi.org/{DOI})\n\nIf neither PMID nor DOI is available for a study, omit it. Do NOT invent URLs. This is the ONLY section allowed to contain URLs.`
+  : `*No external links available.*`}
+
+---
+
+INDEXED GUIDELINE SOURCES (internal — do NOT reference by number in the body):
 ${guidelineContext || "(none provided)"}
 
 ---
 
-RECENT LITERATURE (${data.literature?.length ?? 0}):
+RECENT LITERATURE (internal — do NOT reference by number in the body):
 ${litContext || "(none provided)"}`;
+
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
