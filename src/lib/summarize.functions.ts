@@ -30,10 +30,21 @@ const Input = z.object({
 });
 
 export const summarizeResults = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => Input.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const { data: perm } = await context.supabase
+      .from("user_permissions")
+      .select("can_summarize")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (perm && perm.can_summarize === false) {
+      throw new Error("Summary permission is disabled for your account");
+    }
+
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("Missing LOVABLE_API_KEY");
+
 
     const useGuidelines = data.useGuidelines !== false;
     const useLiterature = data.useLiterature !== false;
