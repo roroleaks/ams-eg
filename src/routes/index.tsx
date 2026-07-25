@@ -169,11 +169,16 @@ function Index() {
 
   async function handleSummarize() {
     if (summarizing) return;
+    if (!session) {
+      setSummaryError("Please sign in to generate a summary.");
+      return;
+    }
     if (!useGuidelines && !useLiterature) {
       setSummaryError("Enable at least one evidence source.");
       return;
     }
     if (useGuidelines && !results.length && !useLiterature) return;
+
     setSummarizing(true);
     setSummaryError(null);
     try {
