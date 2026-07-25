@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const LogInput = z.object({
   query: z.string().min(1).max(500),
@@ -8,14 +9,15 @@ const LogInput = z.object({
 });
 
 export const logSearch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => LogInput.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin.from("search_analytics").insert({
+      await context.supabase.from("search_analytics").insert({
         query: data.query,
         result_count: data.result_count,
         mode: data.mode ?? null,
+        user_id: context.userId,
       });
     } catch (e) {
       // Never let analytics break the app
