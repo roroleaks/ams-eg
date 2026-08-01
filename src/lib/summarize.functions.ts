@@ -1,7 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-
 
 const PassageSchema = z.object({
   product: z.string().nullable().optional(),
@@ -18,6 +16,7 @@ const LiteratureSchema = z.object({
   year: z.string(),
   doi: z.string().nullable(),
   pmid: z.string().nullable(),
+  pmcid: z.string().nullable().optional(),
   pubType: z.string(),
 });
 
@@ -30,21 +29,19 @@ const Input = z.object({
 });
 
 export const summarizeResults = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => Input.parse(d))
-  .handler(async ({ data, context }) => {
-    const { data: perm } = await context.supabase
-      .from("user_permissions")
-      .select("can_summarize")
-      .eq("user_id", context.userId)
-      .maybeSingle();
-    if (perm && perm.can_summarize === false) {
+  .handler(async ({ data }) => {
+    const { getOptionalCaller, permissionDenied, clientKey, enforceRateLimit } = await import(
+      "@/lib/ai-guard.server"
+    );
+    const caller = await getOptionalCaller();
+    if (await permissionDenied(caller, "can_summarize")) {
       throw new Error("Summary permission is disabled for your account");
     }
+    enforceRateLimit(clientKey("summary", caller.userId), caller.userId ? 30 : 8, 10 * 60_000);
 
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("Missing LOVABLE_API_KEY");
-
 
     const useGuidelines = data.useGuidelines !== false;
     const useLiterature = data.useLiterature !== false;
@@ -65,16 +62,15 @@ export const summarizeResults = createServerFn({ method: "POST" })
 
     const litContext = (data.literature ?? [])
       .map((l, i) => {
-        const cite = [
-          l.journal,
-          l.year,
-          l.pubType,
-          l.doi ? `DOI:${l.doi}` : null,
-          l.pmid ? `PMID:${l.pmid}` : null,
+        const links = [
+          l.pmid ? `PubMed https://pubmed.ncbi.nlm.nih.gov/${l.pmid}/` : null,
+          l.pmcid ? `PMC https://pmc.ncbi.nlm.nih.gov/articles/${l.pmcid}/` : null,
+          l.doi ? `Publisher https://doi.org/${l.doi}` : null,
+          l.doi ? `CrossRef https://search.crossref.org/?q=${encodeURIComponent(l.doi)}` : null,
         ]
           .filter(Boolean)
-          .join(" · ");
-        return `STUDY ${i + 1} "${l.title}" — ${l.authors} (${cite})`;
+          .join(" | ");
+        return `STUDY ${i + 1} "${l.title}" — ${l.authors}. ${l.journal}. ${l.year}. ${l.pubType}\nLINKS: ${links || "(none)"}`;
       })
       .join("\n\n");
 
@@ -89,17 +85,19 @@ export const summarizeResults = createServerFn({ method: "POST" })
 
     const system = `You are a senior clinical evidence-synthesis author writing a formal "Clinical Evidence Report" for physicians. The output must read like a professional medical review article, NOT a retrieval log.
 
-ABSOLUTE FORMATTING RULES:
-- NEVER show retrieval identifiers of any kind in the body: no (G1), [G2], (L3), [R4], "Source 5", "Study 2", "Chunk", "Passage", "Vector Score", "Similarity", or similar internal metadata.
-- NEVER place URLs, DOIs, or PMIDs in the body prose. URLs appear ONLY in the final "Useful Links" section. DOI/PMID appear ONLY in the References section.
-- Write clean, flowing medical prose. Do NOT interrupt sentences or paragraphs with reference labels.
-- Ground every clinical statement in the supplied sources; do NOT fabricate studies, authors, DOIs, PMIDs, journals, dosages, or findings.
-- Use professional, neutral medical register.`;
+ABSOLUTE RULES:
+- NEVER show retrieval identifiers of any kind: no (G1), [G2], (L3), [R4], "Source 5", "Study 2", "Chunk", "Passage", "Vector Score", "Similarity", or any internal metadata.
+- NEVER print raw DOI strings such as "doi:10.xxxx/yyyy" or "DOI:10...." anywhere, including References. DOIs may only appear converted into a clickable hyperlink inside the final "Useful Links" section.
+- No URLs anywhere except the "Useful Links" section.
+- DEDUPLICATE aggressively. Each medication, supplement or active ingredient must appear exactly ONCE in the whole report. Merge every retrieved fact about it into that single entry, including synonyms and brand/INN variants (e.g. CoQ10 = Coenzyme Q10 = Ubiquinone = Ubiquinol; L-Carnitine = Levocarnitine = LC/LAC; Myo-inositol = Inositol; Vitamin B9 = Folate = Folic acid). Choose one canonical heading and list the synonyms in parentheses once.
+- Never repeat the same sentence, fact, or recommendation in more than one section.
+- Ground every clinical statement in the supplied sources; do NOT fabricate studies, authors, journals, dosages, or findings.
+- Use professional, neutral medical register with clean headings and spacing; the document must be suitable for printing or PDF export.`;
 
     const user = `Topic (clinician's query): "${data.query}"
 Date generated: ${today}
 
-Produce a Markdown document with EXACTLY this structure and these headings, in this order. Follow every rule precisely.
+Produce a Markdown document with EXACTLY these headings, in this order.
 
 # Clinical Evidence Report
 
@@ -109,51 +107,61 @@ Produce a Markdown document with EXACTLY this structure and these headings, in t
 ---
 
 ## Executive Summary
-Write 3–6 sentences summarizing the most important clinical conclusions in flowing prose. No citation tags. No URLs.
+3–6 sentences of flowing prose covering the most important clinical conclusions.
 
 ## Guideline Recommendations
 ${haveG
-  ? `Summarize the recommendations extracted from the indexed guideline sources below. Organize into logical ### subheadings chosen from (only include those relevant to the topic): Diagnosis, Risk Factors, Treatment, Follow-up, Clinical Pearls. Write in professional medical language. Do not repeat information. Absolutely no inline citation tags or source labels — the reader will find sources in the References section.`
+  ? `Summarize the indexed guideline sources below using only the relevant ### subheadings among: Diagnosis, Risk Factors, Treatment, Follow-up, Clinical Pearls. Do not duplicate content that belongs in Medication Summary — keep drug-specific detail there and reference it only at a high level here.`
   : `Write exactly: *No indexed guideline evidence was found for this query.*`}
 
 ## Recent Medical Evidence
 ${haveL
-  ? `Summarize the recent peer-reviewed literature provided below, organized into ### subheadings by study type where applicable (Meta-analyses, Systematic Reviews, Randomized Trials, Cohort Studies). At the end of this section include a short paragraph stating whether recent evidence **Supports**, **Expands**, or **Challenges** the guideline recommendations. No inline citation tags. No URLs.`
+  ? `Summarize the recent peer-reviewed literature, organized into ### subheadings by study type where applicable (Meta-analyses, Systematic Reviews, Randomized Trials, Cohort Studies). End with a short paragraph stating whether recent evidence **Supports**, **Expands**, or **Challenges** the guideline recommendations.`
   : `Write exactly: *No recent peer-reviewed literature matching this topic was identified.*\n\nDo not expand further in this section.`}
 
+## Medication Summary
+List every medication, supplement or active ingredient found in the evidence above. One ### heading per medication (canonical name, with synonyms in parentheses once). Under each heading use exactly these bolded labels as bullets, omitting a label only when no information exists:
+
+- **Mechanism of Action:** one brief sentence.
+- **Clinical Benefits:** merged bullet list of all benefits found across every source.
+- **Level of Evidence:** e.g. meta-analysis, RCT, cohort, guideline consensus, expert opinion.
+- **Recommended Patient Population:** who should receive it.
+- **Important Notes:** dosing duration, cautions, contraindications, interactions.
+
+Each medication appears once and only once. If no medications are present in the evidence, write: *No specific medications were identified in the retrieved evidence.*
+
 ## Clinical Interpretation
-Provide a practical, evidence-based interpretation for clinicians. Focus on implications for practice, patient selection, limitations, and situations where caution is needed. Do not repeat earlier sections. No citation tags. No URLs.
+Practical, evidence-based interpretation: implications for practice, patient selection, limitations, and where caution is needed. Do not repeat earlier sections.
 
 ## Key Clinical Takeaways
-Provide 5–10 concise bullet points with the most important actionable messages. No citation tags. No URLs.
+5–10 concise, actionable bullet points, each distinct.
 
 ## References
 
 ### Indexed Guidelines
 ${haveG
-  ? `List every indexed guideline source that was actually used, one per line block, formatted as:\n\nOrganization or Author.\nDocument title.\nEdition or Year (use "n.d." if unknown).\npp. [page numbers].\n\nDeduplicate identical documents by combining page ranges. No URLs here.`
+  ? `Clean bibliography of the guideline documents actually used, one per block:\n\nOrganization or Author.\nDocument title.\nEdition or Year (use "n.d." if unknown).\npp. [page numbers].\n\nDeduplicate identical documents by combining page ranges. No URLs, no DOIs.`
   : `*None.*`}
 
 ### Recent Literature
 ${haveL
-  ? `List each cited study in Vancouver style, one per numbered entry:\n\n1. Authors. Title. Journal. Year;Volume:Pages. doi:XXXX. PMID:XXXX.\n\nOmit fields that were not provided. No URLs in this block — URLs go in Useful Links.`
+  ? `Numbered Vancouver-style entries without DOI or URL:\n\n1. Authors. Title. Journal. Year.\n\nOmit fields that were not provided.`
   : `*None.*`}
 
 ## Useful Links
 ${haveL
-  ? `List clickable Markdown hyperlinks for the recent literature only, one per line, using these labels when the identifier is available:\n\n- [PubMed](https://pubmed.ncbi.nlm.nih.gov/{PMID}/)\n- [DOI](https://doi.org/{DOI})\n\nIf neither PMID nor DOI is available for a study, omit it. Do NOT invent URLs. This is the ONLY section allowed to contain URLs.`
+  ? `For each cited study, one line beginning with the study's short title followed by clickable Markdown links, using ONLY the links supplied in the LINKS field for that study (labels: PubMed, PMC, Publisher, CrossRef). Convert nothing yourself and invent no URLs. Omit studies with no links. This is the ONLY section allowed to contain URLs.`
   : `*No external links available.*`}
 
 ---
 
-INDEXED GUIDELINE SOURCES (internal — do NOT reference by number in the body):
+INDEXED GUIDELINE SOURCES (internal — never reference by number):
 ${guidelineContext || "(none provided)"}
 
 ---
 
-RECENT LITERATURE (internal — do NOT reference by number in the body):
+RECENT LITERATURE (internal — never reference by number):
 ${litContext || "(none provided)"}`;
-
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -169,6 +177,8 @@ ${litContext || "(none provided)"}`;
         ],
       }),
     });
+    if (res.status === 429) throw new Error("AI service is busy right now. Please retry shortly.");
+    if (res.status === 402) throw new Error("AI credits are exhausted. Please contact the administrator.");
     if (!res.ok) {
       const t = await res.text();
       throw new Error(`summarize ${res.status}: ${t.slice(0, 300)}`);
@@ -176,5 +186,8 @@ ${litContext || "(none provided)"}`;
     const j = (await res.json()) as {
       choices: { message: { content: string } }[];
     };
-    return { markdown: j.choices[0]?.message?.content ?? "" };
+    let markdown = j.choices[0]?.message?.content ?? "";
+    // Safety net: strip any stray raw DOI strings from the body.
+    markdown = markdown.replace(/\(?\s*(?:doi|DOI)\s*:\s*10\.[^\s)\]]+\s*\)?/g, "").replace(/[ \t]{2,}/g, " ");
+    return { markdown };
   });

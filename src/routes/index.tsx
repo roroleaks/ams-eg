@@ -114,10 +114,10 @@ function Index() {
       .catch(() => setEmbedsReady(false));
   }, []);
 
-  // Debounced query embedding (requires sign-in)
+  // Debounced query embedding (available to all users, incl. guests)
   useEffect(() => {
     const q = query.trim();
-    if (!q || !session) {
+    if (!q) {
       setQVec(null);
       return;
     }
@@ -134,7 +134,7 @@ function Index() {
       }
     }, 250);
     return () => clearTimeout(handle);
-  }, [query, embedFn, session]);
+  }, [query, embedFn]);
 
 
   const products = useMemo(() => getAllProducts(), []);
@@ -169,10 +169,6 @@ function Index() {
 
   async function handleSummarize() {
     if (summarizing) return;
-    if (!session) {
-      setSummaryError("Please sign in to generate a summary.");
-      return;
-    }
     if (!useGuidelines && !useLiterature) {
       setSummaryError("Enable at least one evidence source.");
       return;
@@ -217,6 +213,7 @@ function Index() {
             year: l.year,
             doi: l.doi,
             pmid: l.pmid,
+            pmcid: l.pmcid ?? null,
             pubType: l.pubType,
           })),
           useGuidelines,
