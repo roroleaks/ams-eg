@@ -527,9 +527,6 @@ function Index() {
                   {literature.map((l, i) => (
                     <li key={i} className="rounded-md border border-border/60 bg-background p-3">
                       <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono font-medium text-primary">
-                          L{i + 1}
-                        </span>
                         <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
                           {l.pubType.split(";")[0]}
                         </span>
@@ -546,11 +543,40 @@ function Index() {
                       {l.authors && (
                         <p className="mt-1 text-xs text-muted-foreground">{l.authors}</p>
                       )}
-                      <p className="mt-1 text-xs italic text-muted-foreground">
-                        {l.journal}
-                        {l.doi && <> · DOI: <span className="font-mono">{l.doi}</span></>}
-                        {l.pmid && <> · PMID: <span className="font-mono">{l.pmid}</span></>}
+                      <p className="mt-1 text-xs italic text-muted-foreground">{l.journal}</p>
+                      <p className="mt-1 flex flex-wrap gap-3 text-xs not-italic">
+                        {l.pmid && (
+                          <a
+                            href={`https://pubmed.ncbi.nlm.nih.gov/${l.pmid}/`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            PubMed
+                          </a>
+                        )}
+                        {l.pmcid && (
+                          <a
+                            href={`https://pmc.ncbi.nlm.nih.gov/articles/${l.pmcid}/`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            PMC
+                          </a>
+                        )}
+                        {l.doi && (
+                          <a
+                            href={`https://doi.org/${l.doi}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            Publisher
+                          </a>
+                        )}
                       </p>
+
                     </li>
                   ))}
                 </ol>
