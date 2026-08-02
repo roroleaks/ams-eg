@@ -1,62 +1,77 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Search, FileText, BookOpen, Sparkles, Wand2, Loader2, X, ShieldCheck, LogIn, LogOut } from "lucide-react";
+import {
+  Search,
+  FileText,
+  BookOpen,
+  Sparkles,
+  Wand2,
+  Loader2,
+  X,
+  ShieldCheck,
+  LogIn,
+  LogOut,
+  Stethoscope,
+  ChevronDown,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  hybridSearch,
-  getAllProducts,
-  totalChunks,
-  loadEmbeddings,
-} from "@/lib/search";
+import { loadEmbeddings } from "@/lib/search";
+import { matchProducts, loadComplaintEmbeddings, type ProductMatch } from "@/lib/complaint-match";
 import { embedQuery } from "@/lib/embed.functions";
-import { summarizeResults } from "@/lib/summarize.functions";
+import { summarizeProductReport } from "@/lib/product-report.functions";
 import { searchLiterature, type LiteratureItem } from "@/lib/literature.functions";
 import { logSearch } from "@/lib/analytics.functions";
 import { isAdmin as isAdminFn } from "@/lib/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { Highlight } from "@/components/Highlight";
 import { getProductImage } from "@/data/product-images";
 
-
 const COMPLAINTS: string[] = [
+  "Low AMH",
+  "Poor ovarian reserve",
   "PCOS",
-  "endometriosis",
-  "fibroid",
-  "irregular periods",
-  "heavy menstrual bleeding",
-  "painful periods",
-  "PMS",
-  "infertility",
-  "recurrent miscarriage",
-  "poor ovarian reserve",
-  "anovulation",
-  "preconception",
-  "menopause",
-  "menopausal symptoms",
-  "vaginal dryness",
-  "low libido",
-  "urinary tract infection",
-  "recurrent UTI",
-  "breast pain",
-  "fibrocystic breast",
-  "low sperm count",
-  "poor sperm motility",
-  "erectile dysfunction",
+  "Insulin resistance",
+  "Irregular menstrual cycle",
+  "Heavy menstrual bleeding",
+  "Endometriosis",
+  "Dysmenorrhea",
+  "Uterine fibroid",
+  "Pelvic pain",
+  "Recurrent miscarriage",
+  "Advanced maternal age",
+  "Egg freezing",
+  "Preterm labor",
+  "Breast pain",
+  "Fibrocystic breast changes",
+  "Male infertility",
+  "Low sperm count",
+  "Poor sperm motility",
+  "High DNA fragmentation",
+  "Erectile dysfunction",
+  "Recurrent UTI",
 ];
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "AMS Product Reference — Search for Clinicians" },
+      { title: "AMS Product Advisor — Complaint-Based Clinical Decision Support" },
       {
         name: "description",
         content:
-          "Searchable clinical reference for America Medic & Science (AMS) fertility and health supplements. Find ingredients, indications, dosing, and trial data instantly.",
+          "Enter a patient complaint and get matched America Medic & Science products with official indications, indexed guideline evidence and recent peer-reviewed literature.",
       },
+      { property: "og:title", content: "AMS Product Advisor — Clinical Decision Support" },
+      {
+        property: "og:description",
+        content:
+          "Complaint-driven product recommendations for clinicians, backed by indexed monographs and recent peer-reviewed evidence.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Index,
@@ -64,27 +79,25 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const [query, setQuery] = useState("");
-  const [productFilter, setProductFilter] = useState<string | null>(null);
   const [qVec, setQVec] = useState<Float32Array | null>(null);
-  const [embedsReady, setEmbedsReady] = useState(false);
+  const [ready, setReady] = useState(false);
   const [embedding, setEmbedding] = useState(false);
   const embedFn = useServerFn(embedQuery);
-  const summarizeFn = useServerFn(summarizeResults);
+  const reportFn = useServerFn(summarizeProductReport);
   const literatureFn = useServerFn(searchLiterature);
   const logFn = useServerFn(logSearch);
   const isAdminServer = useServerFn(isAdminFn);
-  const [summary, setSummary] = useState<string | null>(null);
-  const [summarizing, setSummarizing] = useState(false);
-  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [report, setReport] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
   const [literature, setLiterature] = useState<LiteratureItem[]>([]);
-  const [useGuidelines, setUseGuidelines] = useState(true);
+  const [litLoading, setLitLoading] = useState(false);
   const [useLiterature, setUseLiterature] = useState(true);
   const [session, setSession] = useState<{ email?: string } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const seqRef = useRef(0);
   const lastLoggedRef = useRef<string>("");
 
-  // Track auth session
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) {
@@ -97,24 +110,20 @@ function Index() {
         setSession(s?.user ? { email: s.user.email } : null);
         if (s?.user) {
           isAdminServer().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
-        } else {
-          setIsAdmin(false);
-        }
+        } else setIsAdmin(false);
       }
     });
     return () => sub.subscription.unsubscribe();
   }, [isAdminServer]);
 
-
-
-  // Preload embedding matrix once
+  // Preload both embedding matrices
   useEffect(() => {
-    loadEmbeddings()
-      .then(() => setEmbedsReady(true))
-      .catch(() => setEmbedsReady(false));
+    Promise.all([loadComplaintEmbeddings(), loadEmbeddings().catch(() => null)])
+      .then(() => setReady(true))
+      .catch(() => setReady(false));
   }, []);
 
-  // Debounced query embedding (available to all users, incl. guests)
+  // Debounced query embedding
   useEffect(() => {
     const q = query.trim();
     if (!q) {
@@ -136,77 +145,89 @@ function Index() {
     return () => clearTimeout(handle);
   }, [query, embedFn]);
 
-
-  const products = useMemo(() => getAllProducts(), []);
-  const results = useMemo(() => {
+  const matches: ProductMatch[] = useMemo(() => {
     if (!query.trim()) return [];
-    const r = hybridSearch(query, embedsReady ? qVec : null, 80);
-    return productFilter ? r.filter((x) => x.product === productFilter) : r;
-  }, [query, productFilter, qVec, embedsReady]);
+    return matchProducts(query, ready ? qVec : null);
+  }, [query, qVec, ready]);
 
-  // Reset summary when query/filter changes
+  // Reset report on new complaint
   useEffect(() => {
-    setSummary(null);
-    setSummaryError(null);
-    setLiterature([]);
-  }, [query, productFilter]);
+    setReport(null);
+    setReportError(null);
+  }, [query]);
 
-  // Log searches (debounced, no dupes) — only for signed-in users
+  // Fetch recent literature for the complaint (cached server-side)
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || !useLiterature || matches.length === 0) {
+      setLiterature([]);
+      return;
+    }
+    let cancelled = false;
+    setLitLoading(true);
+    const handle = setTimeout(() => {
+      literatureFn({ data: { query: q, yearsBack: 5, limit: 12 } })
+        .then(({ items }) => {
+          if (!cancelled) setLiterature(items);
+        })
+        .catch(() => {
+          if (!cancelled) setLiterature([]);
+        })
+        .finally(() => {
+          if (!cancelled) setLitLoading(false);
+        });
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [query, useLiterature, matches.length, literatureFn]);
+
+  // Analytics for signed-in users
   useEffect(() => {
     const q = query.trim();
     if (!q || q.length < 2 || !session) return;
     const handle = setTimeout(() => {
-      const key = `${q}|${results.length}`;
+      const key = `${q}|${matches.length}`;
       if (lastLoggedRef.current === key) return;
       lastLoggedRef.current = key;
-      const mode = embedsReady && qVec ? "hybrid" : "keyword";
-      logFn({ data: { query: q, result_count: results.length, mode } }).catch(() => {});
+      logFn({
+        data: { query: q, result_count: matches.length, mode: qVec ? "hybrid" : "keyword" },
+      }).catch(() => {});
     }, 900);
     return () => clearTimeout(handle);
-  }, [query, results.length, embedsReady, qVec, logFn, session]);
+  }, [query, matches.length, qVec, logFn, session]);
 
-
-
-  async function handleSummarize() {
-    if (summarizing) return;
-    if (!useGuidelines && !useLiterature) {
-      setSummaryError("Enable at least one evidence source.");
-      return;
-    }
-    if (useGuidelines && !results.length && !useLiterature) return;
-
-    setSummarizing(true);
-    setSummaryError(null);
+  async function handleReport() {
+    if (reporting || !matches.length) return;
+    setReporting(true);
+    setReportError(null);
     try {
-      const passages = useGuidelines
-        ? results.slice(0, 20).map((r) => ({
-            product: r.product,
-            section: r.section,
-            page: r.page,
-            sourceName: r.sourceName ?? null,
-            text: r.text.slice(0, 900),
-          }))
-        : [];
-
-      let lit: LiteratureItem[] = [];
-      if (useLiterature) {
+      let lit = literature;
+      if (useLiterature && lit.length === 0) {
         try {
           const { items } = await literatureFn({ data: { query, yearsBack: 5, limit: 10 } });
           lit = items;
           setLiterature(items);
-        } catch (e) {
-          console.warn("literature search failed", e);
-          setLiterature([]);
+        } catch {
+          lit = [];
         }
-      } else {
-        setLiterature([]);
       }
-
-      const { markdown } = await summarizeFn({
+      const { markdown } = await reportFn({
         data: {
-          query,
-          passages,
-          literature: lit.map((l) => ({
+          complaint: query.trim(),
+          products: matches.slice(0, 6).map((m) => ({
+            name: m.product,
+            matchedIndications: m.matchedIndications,
+            otherIndications: m.otherIndications,
+            passages: m.passages.slice(0, 6).map((p) => ({
+              section: p.section,
+              page: p.page,
+              sourceName: p.sourceName ?? null,
+              text: p.text.slice(0, 800),
+            })),
+          })),
+          literature: (useLiterature ? lit : []).slice(0, 10).map((l) => ({
             title: l.title,
             authors: l.authors,
             journal: l.journal,
@@ -216,50 +237,31 @@ function Index() {
             pmcid: l.pmcid ?? null,
             pubType: l.pubType,
           })),
-          useGuidelines,
-          useLiterature,
         },
       });
-      setSummary(markdown);
+      setReport(markdown);
     } catch (e) {
-      setSummaryError(e instanceof Error ? e.message : "Failed to summarize");
+      setReportError(e instanceof Error ? e.message : "Failed to generate report");
     } finally {
-      setSummarizing(false);
+      setReporting(false);
     }
   }
-
-
-  const terms = useMemo(
-    () =>
-      query
-        .toLowerCase()
-        .split(/\s+/)
-        .map((t) => t.replace(/[^a-z0-9\-]/gi, ""))
-        .filter((t) => t.length > 1),
-    [query]
-  );
 
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
-        <div className="mx-auto max-w-5xl px-6 py-8">
+        <div className="mx-auto max-w-6xl px-6 py-8">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary ring-1 ring-primary/20">
-                <img
-                  src="/ams-logo.png"
-                  alt="AMS"
-                  width={40}
-                  height={40}
-                  className="h-full w-full object-contain"
-                />
+                <img src="/ams-logo.png" alt="AMS" width={40} height={40} className="h-full w-full object-contain" />
               </div>
               <div>
                 <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                  AMS Clinical Reference
+                  AMS Product Advisor
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  Searchable product knowledge for healthcare professionals
+                  Enter a patient complaint — get matched products with evidence
                 </p>
               </div>
             </div>
@@ -267,7 +269,7 @@ function Index() {
               {isAdmin && (
                 <Link to="/admin">
                   <Button variant="outline" size="sm">
-                    <ShieldCheck className="h-4 w-4 mr-1" /> Admin
+                    <ShieldCheck className="mr-1 h-4 w-4" /> Admin
                   </Button>
                 </Link>
               )}
@@ -282,28 +284,42 @@ function Index() {
                   }}
                   title={session.email}
                 >
-                  <LogOut className="h-4 w-4 mr-1" /> Sign out
+                  <LogOut className="mr-1 h-4 w-4" /> Sign out
                 </Button>
               ) : (
                 <Link to="/auth">
                   <Button variant="ghost" size="sm">
-                    <LogIn className="h-4 w-4 mr-1" /> Sign in
+                    <LogIn className="mr-1 h-4 w-4" /> Sign in
                   </Button>
                 </Link>
               )}
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-4 text-sm">
-            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 hover:bg-accent">
-              <input
-                type="checkbox"
-                checked={useGuidelines}
-                onChange={(e) => setUseGuidelines(e.target.checked)}
-                className="h-4 w-4 accent-primary"
-              />
-              <span className="font-medium">Search Guideline Library</span>
-            </label>
+          <div className="relative mt-6">
+            <Stethoscope className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Patient complaint, diagnosis or scenario — e.g. 'low AMH', 'heavy menstrual bleeding', 'poor sperm motility'"
+              className="h-14 rounded-xl border-input pl-12 pr-32 text-base shadow-sm focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                  ready && qVec
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-border bg-muted text-muted-foreground"
+                }`}
+              >
+                <Sparkles className="h-3 w-3" />
+                {ready ? (qVec ? "Semantic" : embedding ? "…" : "Keyword") : "Loading"}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
             <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 hover:bg-accent">
               <input
                 type="checkbox"
@@ -311,216 +327,176 @@ function Index() {
                 onChange={(e) => setUseLiterature(e.target.checked)}
                 className="h-4 w-4 accent-primary"
               />
-              <span className="font-medium">Search Recent Medical Literature</span>
-              <span className="text-xs text-muted-foreground">(PubMed · Europe PMC, last 5y)</span>
-            </label>
-          </div>
-
-          <div className="relative mt-4">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by concept or keyword — e.g. 'low ovarian reserve', 'poor responder', 'D-mannose UTI'"
-              className="h-14 rounded-xl border-input pl-12 pr-32 text-base shadow-sm focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-              <span
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                  embedsReady && qVec
-                    ? "border-primary/30 bg-primary/10 text-primary"
-                    : "border-border bg-muted text-muted-foreground"
-                }`}
-                title={
-                  embedsReady
-                    ? qVec
-                      ? "Semantic + keyword search active"
-                      : embedding
-                      ? "Computing semantic vector…"
-                      : "Keyword search"
-                    : "Loading semantic index…"
-                }
-              >
-                <Sparkles className="h-3 w-3" />
-                {embedsReady
-                  ? qVec
-                    ? "Semantic"
-                    : embedding
-                    ? "…"
-                    : "Keyword"
-                  : "Loading"}
+              <span className="font-medium">Include recent peer-reviewed literature</span>
+              <span className="text-xs text-muted-foreground">
+                (PubMed · PMC · Europe PMC · CrossRef, last 5y)
               </span>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant={productFilter === null ? "default" : "outline"}
-              onClick={() => setProductFilter(null)}
-              className="h-8"
-            >
-              All products
-            </Button>
-            {products.map((p) => {
-              const img = getProductImage(p);
-              const active = productFilter === p;
-              return (
-                <Button
-                  key={p}
-                  size="sm"
-                  variant={active ? "default" : "outline"}
-                  onClick={() => setProductFilter(p)}
-                  className="h-9 gap-2 pl-1.5 pr-3"
-                >
-                  {img ? (
-                    <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-border">
-                      <img
-                        src={img}
-                        alt=""
-                        loading="lazy"
-                        className="h-full w-full object-contain"
-                      />
-                    </span>
-                  ) : null}
-                  <span>{p}</span>
-                </Button>
-              );
-            })}
+            </label>
           </div>
 
           <div className="mt-4">
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Common complaints
+              Common patient complaints
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {COMPLAINTS.map((c) => {
-                const active = query === c;
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setQuery(c)}
-                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                      active
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background text-foreground hover:bg-accent"
-                    }`}
-                  >
-                    {c}
-                  </button>
-                );
-              })}
+              {COMPLAINTS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setQuery(c)}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    query === c
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background text-foreground hover:bg-accent"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-8">
+      <main className="mx-auto max-w-6xl px-6 py-8">
         {!query.trim() ? (
           <EmptyState onPick={setQuery} />
-        ) : results.length === 0 ? (
-          <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-card p-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                No passages found in the guideline library for{" "}
-                <span className="font-medium text-foreground">"{query}"</span>
-                {productFilter ? ` in ${productFilter}` : ""}.
-              </p>
-              {useLiterature && (
-                <Button
-                  size="sm"
-                  onClick={handleSummarize}
-                  disabled={summarizing}
-                  className="mt-4 h-8 gap-1.5"
-                >
-                  {summarizing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Wand2 className="h-3.5 w-3.5" />
-                  )}
-                  {summarizing ? "Searching literature…" : "Search recent literature"}
-                </Button>
-              )}
-            </div>
-            {summaryError && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                {summaryError}
-              </div>
-            )}
-            {summary && (
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-5 shadow-sm">
-                <div className="prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-h2:text-base prose-h2:font-semibold">
-                  <ReactMarkdown>{summary}</ReactMarkdown>
-                </div>
-              </div>
-            )}
+        ) : matches.length === 0 ? (
+          <div className="rounded-lg border border-border bg-card p-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              No AMS product is indicated for{" "}
+              <span className="font-medium text-foreground">"{query}"</span> in the complaint
+              database. Try a related clinical term.
+            </p>
           </div>
         ) : (
           <>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-              <span>
-                {results.length} passage{results.length === 1 ? "" : "s"} found
-              </span>
-              <div className="flex items-center gap-3">
-                <Button
-                  size="sm"
-                  onClick={handleSummarize}
-                  disabled={summarizing}
-                  className="h-8 gap-1.5"
-                >
-                  {summarizing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Wand2 className="h-3.5 w-3.5" />
-                  )}
-                  {summarizing ? "Summarizing…" : summary ? "Regenerate summary" : "Summary"}
-                </Button>
-                <span className="text-xs">
-                  Searched {totalChunks()} passages
-                </span>
-              </div>
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{matches.length}</span> product
+                {matches.length === 1 ? "" : "s"} indicated for{" "}
+                <span className="font-medium text-foreground">"{query}"</span>
+                {litLoading && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-xs">
+                    <Loader2 className="h-3 w-3 animate-spin" /> loading literature…
+                  </span>
+                )}
+              </p>
+              <Button onClick={handleReport} disabled={reporting} className="h-9 gap-1.5">
+                {reporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Wand2 className="h-4 w-4" />
+                )}
+                {reporting
+                  ? "Building report…"
+                  : report
+                  ? "Regenerate report"
+                  : "Clinical Product Report"}
+              </Button>
             </div>
 
-            {summaryError && (
+            {reportError && (
               <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                {summaryError}
+                {reportError}
               </div>
             )}
 
-            {summary && (
-              <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-5 shadow-sm">
+            {report && (
+              <div className="mb-8 rounded-xl border border-primary/20 bg-primary/5 p-6 shadow-sm">
                 <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-                    <Sparkles className="h-4 w-4" />
-                    AI Clinical Briefing
+                    <Sparkles className="h-4 w-4" /> Clinical Product Report
                   </div>
                   <button
                     type="button"
-                    onClick={() => setSummary(null)}
+                    onClick={() => setReport(null)}
                     className="text-muted-foreground hover:text-foreground"
-                    aria-label="Dismiss summary"
+                    aria-label="Dismiss report"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-headings:text-foreground prose-h2:text-base prose-h2:font-semibold prose-p:text-foreground/90 prose-li:text-foreground/90 prose-strong:text-foreground">
-                  <ReactMarkdown>{summary}</ReactMarkdown>
+                <div className="max-w-none text-sm leading-relaxed text-foreground/90 [&_em]:italic [&_strong]:font-semibold [&_strong]:text-foreground">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: (p) => (
+                        <h1 className="mb-2 text-xl font-bold tracking-tight text-foreground" {...p} />
+                      ),
+                      h2: (p) => (
+                        <h2
+                          className="mt-7 mb-3 border-b border-primary/15 pb-1.5 text-base font-semibold uppercase tracking-wide text-primary"
+                          {...p}
+                        />
+                      ),
+                      h3: (p) => (
+                        <h3 className="mt-5 mb-1.5 text-[15px] font-semibold text-foreground" {...p} />
+                      ),
+                      h4: (p) => (
+                        <h4 className="mt-4 mb-1 text-sm font-semibold text-foreground" {...p} />
+                      ),
+                      p: (p) => <p className="my-2.5" {...p} />,
+                      ul: (p) => <ul className="my-2.5 list-disc space-y-1 pl-5" {...p} />,
+                      ol: (p) => <ol className="my-2.5 list-decimal space-y-1 pl-5" {...p} />,
+                      hr: () => <hr className="my-6 border-border" />,
+                      a: (p) => (
+                        <a
+                          className="text-primary underline underline-offset-2"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          {...p}
+                        />
+                      ),
+                      table: (p) => (
+                        <div className="my-4 overflow-x-auto rounded-lg border border-border">
+                          <table className="w-full border-collapse text-xs" {...p} />
+                        </div>
+                      ),
+                      thead: (p) => <thead className="bg-muted/60" {...p} />,
+                      th: (p) => (
+                        <th
+                          className="border-b border-border px-3 py-2 text-left font-semibold text-foreground"
+                          {...p}
+                        />
+                      ),
+                      td: (p) => (
+                        <td className="border-b border-border/60 px-3 py-2 align-top" {...p} />
+                      ),
+                      blockquote: (p) => (
+                        <blockquote className="my-3 border-l-2 border-primary/40 pl-3 italic" {...p} />
+                      ),
+                    }}
+                  >
+                    {report}
+                  </ReactMarkdown>
                 </div>
+
                 <p className="mt-4 border-t border-primary/10 pt-3 text-[11px] text-muted-foreground">
-                  AI-generated from the ranked passages below. Always verify against the cited sources.
+                  AI-generated from the indexed documents and literature below. Always verify against
+                  the cited sources.
                 </p>
               </div>
             )}
 
+            <div className="grid gap-5 lg:grid-cols-2">
+              {matches.map((m) => (
+                <ProductCard
+                  key={m.product}
+                  match={m}
+                  complaint={query}
+                  literature={literature}
+                />
+              ))}
+            </div>
+
             {literature.length > 0 && (
-              <div className="mb-6 rounded-xl border border-border bg-card p-5 shadow-sm">
+              <div className="mt-8 rounded-xl border border-border bg-card p-5 shadow-sm">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                   <BookOpen className="h-4 w-4 text-primary" />
                   Recent peer-reviewed literature ({literature.length})
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    PubMed · Europe PMC · last 5 years
+                    PubMed · PMC · Europe PMC · last 5 years
                   </span>
                 </div>
                 <ol className="space-y-3">
@@ -540,119 +516,14 @@ function Index() {
                       >
                         {l.title}
                       </a>
-                      {l.authors && (
-                        <p className="mt-1 text-xs text-muted-foreground">{l.authors}</p>
-                      )}
+                      {l.authors && <p className="mt-1 text-xs text-muted-foreground">{l.authors}</p>}
                       <p className="mt-1 text-xs italic text-muted-foreground">{l.journal}</p>
-                      <p className="mt-1 flex flex-wrap gap-3 text-xs not-italic">
-                        {l.pmid && (
-                          <a
-                            href={`https://pubmed.ncbi.nlm.nih.gov/${l.pmid}/`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            PubMed
-                          </a>
-                        )}
-                        {l.pmcid && (
-                          <a
-                            href={`https://pmc.ncbi.nlm.nih.gov/articles/${l.pmcid}/`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            PMC
-                          </a>
-                        )}
-                        {l.doi && (
-                          <a
-                            href={`https://doi.org/${l.doi}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            Publisher
-                          </a>
-                        )}
-                      </p>
-
+                      <LitLinks item={l} />
                     </li>
                   ))}
                 </ol>
               </div>
             )}
-
-            <ol className="space-y-3">
-              {results.map((r, i) => {
-                const img = getProductImage(r.product);
-                return (
-                  <li
-                    key={i}
-                    className="group flex gap-4 rounded-lg border border-border bg-card p-5 transition-shadow hover:shadow-md"
-                  >
-                    {img ? (
-                      <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-border">
-                        <img
-                          src={img}
-                          alt={r.product ?? ""}
-                          loading="lazy"
-                          className="h-full w-full object-contain"
-                        />
-                      </div>
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                        {r.product && (
-                          <Badge variant="default" className="font-medium">
-                            {r.product}
-                          </Badge>
-                        )}
-                        <span className="ml-auto text-muted-foreground/70">
-                          relevance {r.score.toFixed(2)}
-                        </span>
-                      </div>
-                      <p className="text-[15px] leading-relaxed text-foreground">
-                        <Highlight text={r.text} terms={terms} />
-                      </p>
-                      {(r.sourceName || r.section || r.page != null) && (
-                        <a
-                          href={
-                            r.sourceFile
-                              ? `${r.sourceFile}${r.page != null ? `#page=${r.page}` : ""}`
-                              : "#"
-                          }
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-3 inline-flex flex-wrap items-center gap-1.5 text-xs text-primary hover:underline"
-                          title="Open source PDF at this page"
-                        >
-                          <BookOpen className="h-3 w-3" />
-                          <span className="font-medium">
-                            {r.sourceName ?? "Source"}
-                          </span>
-                          {r.section && r.section !== r.text && (
-                            <>
-                              <span className="text-muted-foreground">·</span>
-                              <span className="text-foreground/80">{r.section}</span>
-                            </>
-                          )}
-                          {r.page != null && (
-                            <>
-                              <span className="text-muted-foreground">·</span>
-                              <span className="inline-flex items-center gap-1">
-                                <FileText className="h-3 w-3" /> p. {r.page}
-                              </span>
-                            </>
-                          )}
-                        </a>
-                      )}
-
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
           </>
         )}
       </main>
@@ -660,26 +531,245 @@ function Index() {
   );
 }
 
+function LitLinks({ item }: { item: LiteratureItem }) {
+  return (
+    <p className="mt-1 flex flex-wrap gap-3 text-xs not-italic">
+      {item.pmid && (
+        <a
+          href={`https://pubmed.ncbi.nlm.nih.gov/${item.pmid}/`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+        >
+          PubMed
+        </a>
+      )}
+      {item.pmcid && (
+        <a
+          href={`https://pmc.ncbi.nlm.nih.gov/articles/${item.pmcid}/`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+        >
+          PMC
+        </a>
+      )}
+      {item.doi && (
+        <a
+          href={`https://doi.org/${item.doi}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+        >
+          Publisher
+        </a>
+      )}
+      {item.doi && (
+        <a
+          href={`https://search.crossref.org/?q=${encodeURIComponent(item.doi)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+        >
+          CrossRef
+        </a>
+      )}
+    </p>
+  );
+}
+
+function ProductCard({
+  match,
+  complaint,
+  literature,
+}: {
+  match: ProductMatch;
+  complaint: string;
+  literature: LiteratureItem[];
+}) {
+  const [open, setOpen] = useState(false);
+  const img = getProductImage(match.product);
+
+  const rationale = match.passages[0]?.text ?? null;
+  const relevantLit = useMemo(() => {
+    const terms = [complaint, ...match.matchedIndications]
+      .join(" ")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length > 3);
+    const scored = literature.map((l) => {
+      const hay = `${l.title} ${l.abstract}`.toLowerCase();
+      const hits = terms.reduce((s, t) => s + (hay.includes(t) ? 1 : 0), 0);
+      return { l, hits };
+    });
+    scored.sort((a, b) => b.hits - a.hits || a.l.evidenceRank - b.l.evidenceRank);
+    return scored.slice(0, 2).map((s) => s.l);
+  }, [literature, complaint, match.matchedIndications]);
+
+  return (
+    <article className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md">
+      <div className="flex gap-4 border-b border-border/60 bg-muted/30 p-5">
+        {img && (
+          <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-border">
+            <img src={img} alt={match.product} loading="lazy" className="h-full w-full object-contain" />
+          </div>
+        )}
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-foreground">{match.product}</h3>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {match.matchedIndications.slice(0, 4).map((ind) => (
+              <Badge key={ind} variant="default" className="text-[11px] font-medium">
+                {ind}
+              </Badge>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Match confidence {Math.round(match.score * 100)}% · {match.passages.length} indexed
+            passage{match.passages.length === 1 ? "" : "s"}
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-4 p-5 text-sm">
+        <Section title="Official indications">
+          <ul className="ml-4 list-disc space-y-0.5 text-foreground/90">
+            {match.allIndications.slice(0, 6).map((i) => (
+              <li key={i}>{i}</li>
+            ))}
+          </ul>
+        </Section>
+
+        <Section title="Effect on this complaint">
+          <p className="text-foreground/90">
+            {match.matchedIndications.length
+              ? `Officially indicated for ${match.matchedIndications
+                  .slice(0, 3)
+                  .join(", ")
+                  .toLowerCase()} — directly addressing "${complaint}".`
+              : `Indicated for related conditions in the AMS complaint database.`}
+            {rationale ? ` ${rationale.slice(0, 220).trim()}…` : ""}
+          </p>
+        </Section>
+
+        {relevantLit.length > 0 && (
+          <Section title="Evidence & literature rationale">
+            <ul className="space-y-1.5">
+              {relevantLit.map((l, i) => (
+                <li key={i} className="text-xs text-foreground/90">
+                  <a
+                    href={l.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {l.title.slice(0, 120)}
+                  </a>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    — {l.journal}, {l.year}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {match.otherIndications.length > 0 && (
+          <Section title="Other recommended indications">
+            <div className="flex flex-wrap gap-1">
+              {match.otherIndications.map((i) => (
+                <span
+                  key={i}
+                  className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
+                >
+                  {i}
+                </span>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {match.passages.length > 0 && (
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-full gap-1.5"
+              onClick={() => setOpen((o) => !o)}
+            >
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+              {open ? "Hide full evidence" : "View full evidence"}
+            </Button>
+            {open && (
+              <ol className="mt-3 space-y-3">
+                {match.passages.map((p, i) => (
+                  <li key={i} className="rounded-md border border-border/60 bg-background p-3">
+                    <p className="text-[13px] leading-relaxed text-foreground/90">{p.text}</p>
+                    {(p.sourceName || p.section || p.page != null) && (
+                      <a
+                        href={p.sourceFile ? `${p.sourceFile}${p.page != null ? `#page=${p.page}` : ""}` : "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-flex flex-wrap items-center gap-1.5 text-[11px] text-primary hover:underline"
+                      >
+                        <BookOpen className="h-3 w-3" />
+                        <span className="font-medium">{p.sourceName ?? "Source"}</span>
+                        {p.section && p.section !== p.text && (
+                          <>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-foreground/80">{p.section}</span>
+                          </>
+                        )}
+                        {p.page != null && (
+                          <>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="inline-flex items-center gap-1">
+                              <FileText className="h-3 w-3" /> p. {p.page}
+                            </span>
+                          </>
+                        )}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
+
 function EmptyState({ onPick }: { onPick: (q: string) => void }) {
   const examples = [
+    "Low AMH",
     "PCOS",
-    "NAC ovulation",
-    "CoQ10 motility",
-    "endometriosis",
-    "D-mannose UTI",
-    "fibroid",
-    "preconception",
-    "L-carnitine",
+    "Endometriosis",
+    "Heavy menstrual bleeding",
+    "Male infertility",
+    "Recurrent UTI",
   ];
   return (
     <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center">
       <Search className="mx-auto h-8 w-8 text-muted-foreground" />
       <h2 className="mt-4 text-base font-medium text-foreground">
-        Start searching the AMS catalog
+        Start with your patient's complaint
       </h2>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        Type any keyword — ingredient, condition, dose, or trial author — and
-        we'll return the exact passages, ranked by relevance.
+        Type a symptom, diagnosis or clinical scenario. We match it against the AMS indication
+        database, then attach indexed guideline evidence and recent peer-reviewed literature.
       </p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {examples.map((e) => (
