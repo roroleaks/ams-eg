@@ -119,8 +119,15 @@ export function matchProducts(
     });
   }
 
+  // Keep only products that are genuinely indicated for this complaint.
+  const topScore = matches.reduce((m, x) => Math.max(m, x.score), 0);
+  const kept = matches.filter((m) => m.score >= Math.max(0.35, topScore * 0.62)).slice(0, 6);
+  matches.length = 0;
+  matches.push(...kept);
+
   // Attach deduplicated PDF evidence per product
   if (opts.withEvidence !== false && matches.length) {
+
     const passages = hybridSearch(query, qVec, 120);
     const seen = new Set<string>();
     for (const m of matches) {
