@@ -417,9 +417,61 @@ function Index() {
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="prose prose-sm max-w-none prose-headings:mt-5 prose-headings:mb-2 prose-headings:text-foreground prose-h1:text-lg prose-h2:text-base prose-h2:font-semibold prose-p:text-foreground/90 prose-li:text-foreground/90 prose-strong:text-foreground prose-table:text-xs prose-td:align-top">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{report}</ReactMarkdown>
+                <div className="max-w-none text-sm leading-relaxed text-foreground/90 [&_em]:italic [&_strong]:font-semibold [&_strong]:text-foreground">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: (p) => (
+                        <h1 className="mb-2 text-xl font-bold tracking-tight text-foreground" {...p} />
+                      ),
+                      h2: (p) => (
+                        <h2
+                          className="mt-7 mb-3 border-b border-primary/15 pb-1.5 text-base font-semibold uppercase tracking-wide text-primary"
+                          {...p}
+                        />
+                      ),
+                      h3: (p) => (
+                        <h3 className="mt-5 mb-1.5 text-[15px] font-semibold text-foreground" {...p} />
+                      ),
+                      h4: (p) => (
+                        <h4 className="mt-4 mb-1 text-sm font-semibold text-foreground" {...p} />
+                      ),
+                      p: (p) => <p className="my-2.5" {...p} />,
+                      ul: (p) => <ul className="my-2.5 list-disc space-y-1 pl-5" {...p} />,
+                      ol: (p) => <ol className="my-2.5 list-decimal space-y-1 pl-5" {...p} />,
+                      hr: () => <hr className="my-6 border-border" />,
+                      a: (p) => (
+                        <a
+                          className="text-primary underline underline-offset-2"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          {...p}
+                        />
+                      ),
+                      table: (p) => (
+                        <div className="my-4 overflow-x-auto rounded-lg border border-border">
+                          <table className="w-full border-collapse text-xs" {...p} />
+                        </div>
+                      ),
+                      thead: (p) => <thead className="bg-muted/60" {...p} />,
+                      th: (p) => (
+                        <th
+                          className="border-b border-border px-3 py-2 text-left font-semibold text-foreground"
+                          {...p}
+                        />
+                      ),
+                      td: (p) => (
+                        <td className="border-b border-border/60 px-3 py-2 align-top" {...p} />
+                      ),
+                      blockquote: (p) => (
+                        <blockquote className="my-3 border-l-2 border-primary/40 pl-3 italic" {...p} />
+                      ),
+                    }}
+                  >
+                    {report}
+                  </ReactMarkdown>
                 </div>
+
                 <p className="mt-4 border-t border-primary/10 pt-3 text-[11px] text-muted-foreground">
                   AI-generated from the indexed documents and literature below. Always verify against
                   the cited sources.
