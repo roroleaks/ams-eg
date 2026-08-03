@@ -253,9 +253,12 @@ function Index() {
         <div className="mx-auto max-w-6xl px-6 py-8">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary ring-1 ring-primary/20">
-                <img src="/ams-logo.png" alt="AMS" width={40} height={40} className="h-full w-full object-contain" />
-              </div>
+              <img
+                src="/ams-wordmark.png"
+                alt="America Medic & Science"
+                className="h-11 w-auto shrink-0 object-contain"
+              />
+              <div className="hidden h-8 w-px bg-border sm:block" />
               <div>
                 <h1 className="text-xl font-semibold tracking-tight text-foreground">
                   AMS Product Advisor
