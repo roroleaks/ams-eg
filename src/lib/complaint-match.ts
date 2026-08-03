@@ -62,8 +62,23 @@ function keywordOverlap(qTokens: string[], i: number): number {
   return hit / qTokens.length;
 }
 
+/** Complaint → product mappings explicitly removed. */
+const EXCLUSIONS: { test: RegExp; products: string[] }[] = [
+  {
+    // Male infertility and synonyms
+    test: /\b(male\s+(factor\s+)?infertil\w*|male\s+subfertil\w*|infertility\s+in\s+men|men'?s?\s+infertil\w*)\b/i,
+    products: ["Breast-Well", "FibroMed"],
+  },
+  {
+    // Low sperm quality and synonyms
+    test: /\b(sperm|semen|spermatoz\w*|asthenosperm\w*|oligosperm\w*|teratosperm\w*|azoosperm\w*|necrosperm\w*|oligoasthenoteratozoosperm\w*|dfi)\b/i,
+    products: ["Ova-Max"],
+  },
+];
+
 /** In-memory cache of complaint → matches for the session. */
 const cache = new Map<string, ProductMatch[]>();
+
 
 export function matchProducts(
   query: string,
@@ -100,7 +115,15 @@ export function matchProducts(
     perProduct.set(item.product, bucket);
   }
 
+  // Explicit complaint → product exclusions (mapping removed by request).
+  const blocked = new Set<string>();
+  for (const rule of EXCLUSIONS) {
+    if (rule.test.test(q)) for (const p of rule.products) blocked.add(p);
+  }
+  for (const p of blocked) perProduct.delete(p);
+
   const matches: ProductMatch[] = [];
+
   for (const [product, b] of perProduct) {
     b.hits.sort((x, y) => y.s - x.s);
     // best match dominates, additional matches add a small bonus
