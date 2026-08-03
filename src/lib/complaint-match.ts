@@ -67,7 +67,7 @@ const EXCLUSIONS: { test: RegExp; products: string[] }[] = [
   {
     // Male infertility and synonyms
     test: /\b(male\s+(factor\s+)?infertil\w*|male\s+subfertil\w*|infertility\s+in\s+men|men'?s?\s+infertil\w*)\b/i,
-    products: ["Breast-Well", "FibroMed"],
+    products: ["Breast-Well", "FibroMed", "Ova-Max"],
   },
   {
     // Low sperm quality and synonyms
