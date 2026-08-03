@@ -100,7 +100,15 @@ export function matchProducts(
     perProduct.set(item.product, bucket);
   }
 
+  // Explicit complaint → product exclusions (mapping removed by request).
+  const blocked = new Set<string>();
+  for (const rule of EXCLUSIONS) {
+    if (rule.test.test(q)) for (const p of rule.products) blocked.add(p);
+  }
+  for (const p of blocked) perProduct.delete(p);
+
   const matches: ProductMatch[] = [];
+
   for (const [product, b] of perProduct) {
     b.hits.sort((x, y) => y.s - x.s);
     // best match dominates, additional matches add a small bonus
