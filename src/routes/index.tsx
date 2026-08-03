@@ -14,6 +14,7 @@ import {
   LogOut,
   Stethoscope,
   ChevronDown,
+  Printer,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -253,9 +254,12 @@ function Index() {
         <div className="mx-auto max-w-6xl px-6 py-8">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary ring-1 ring-primary/20">
-                <img src="/ams-logo.png" alt="AMS" width={40} height={40} className="h-full w-full object-contain" />
-              </div>
+              <img
+                src="/ams-wordmark.png"
+                alt="America Medic & Science"
+                className="h-11 w-auto shrink-0 object-contain"
+              />
+              <div className="hidden h-8 w-px bg-border sm:block" />
               <div>
                 <h1 className="text-xl font-semibold tracking-tight text-foreground">
                   AMS Product Advisor
@@ -403,19 +407,35 @@ function Index() {
             )}
 
             {report && (
-              <div className="mb-8 rounded-xl border border-primary/20 bg-primary/5 p-6 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
+              <div
+                id="clinical-report"
+                className="mb-8 rounded-xl border border-primary/20 bg-primary/5 p-6 shadow-sm print:m-0 print:rounded-none print:border-0 print:bg-white print:p-0 print:shadow-none"
+              >
+                <div className="mb-3 flex items-center justify-between print:hidden">
                   <div className="flex items-center gap-2 text-sm font-semibold text-primary">
                     <Sparkles className="h-4 w-4" /> Clinical Product Report
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setReport(null)}
-                    className="text-muted-foreground hover:text-foreground"
-                    aria-label="Dismiss report"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.print()}
+                      className="h-8 gap-1.5"
+                    >
+                      <Printer className="h-4 w-4" /> Export PDF
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setReport(null)}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Dismiss report"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mb-4 hidden items-center gap-3 border-b pb-3 print:flex">
+                  <img src="/ams-wordmark.png" alt="America Medic & Science" className="h-10 w-auto" />
                 </div>
                 <div className="max-w-none text-sm leading-relaxed text-foreground/90 [&_em]:italic [&_strong]:font-semibold [&_strong]:text-foreground">
                   <ReactMarkdown
