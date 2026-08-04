@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { bumpCounter } from "@/lib/profile.server";
+import { HistoryInput, FavInput } from "@/lib/profile.schemas";
 
 /** Creates the profile on first sign-in and refreshes last_login_at afterwards. */
 export const touchProfile = createServerFn({ method: "POST" })
@@ -37,13 +38,6 @@ export const getMyProfile = createServerFn({ method: "GET" })
       .maybeSingle();
     return { profile: data };
   });
-
-const HistoryInput = z.object({
-  query: z.string().min(1).max(500),
-  products: z.array(z.string().max(120)).max(30).default([]),
-  result_count: z.number().int().min(0).max(1000).default(0),
-  report_markdown: z.string().max(60000).nullable().optional(),
-});
 
 export const saveSearchHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -103,13 +97,6 @@ export const deleteSearchHistory = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
-
-const FavInput = z.object({
-  item_type: z.enum(["product", "complaint", "report"]),
-  item_key: z.string().min(1).max(200),
-  label: z.string().max(200).optional(),
-  payload: z.record(z.string(), z.unknown()).optional(),
-});
 
 export const toggleFavorite = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
