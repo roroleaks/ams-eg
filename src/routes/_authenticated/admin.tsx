@@ -38,6 +38,7 @@ import {
   Users as UsersIcon,
   Activity,
   BarChart3,
+  UserCircle2,
 } from "lucide-react";
 import {
   listDocuments,
@@ -53,6 +54,9 @@ import {
   listSearchAnalytics,
   exportUsageReport,
   isAdmin as isAdminFn,
+  listRegisteredUsers,
+  userAnalytics,
+  exportRegisteredUsers,
 } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -143,6 +147,9 @@ function AdminPage() {
             <TabsTrigger value="users">
               <UsersIcon className="h-4 w-4 mr-1" /> Users
             </TabsTrigger>
+            <TabsTrigger value="registered">
+              <UserCircle2 className="h-4 w-4 mr-1" /> Registered users
+            </TabsTrigger>
             <TabsTrigger value="logs">
               <Activity className="h-4 w-4 mr-1" /> Indexing logs
             </TabsTrigger>
@@ -156,6 +163,9 @@ function AdminPage() {
           </TabsContent>
           <TabsContent value="users">
             <UsersTab />
+          </TabsContent>
+          <TabsContent value="registered">
+            <RegisteredUsersTab />
           </TabsContent>
           <TabsContent value="logs">
             <LogsTab />
@@ -826,6 +836,157 @@ function StatCard({ label, value }: { label: string; value: number | string }) {
     <Card className="p-4">
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="text-3xl font-semibold mt-2">{value}</div>
+    </Card>
+  );
+}
+
+
+// ============ Registered Users Tab ============
+
+function RegisteredUsersTab() {
+  const listFn = useServerFn(listRegisteredUsers);
+  const statsFn = useServerFn(userAnalytics);
+  const exportFn = useServerFn(exportRegisteredUsers);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["registered-users"],
+    queryFn: () => listFn(),
+  });
+  const stats = useQuery({ queryKey: ["user-analytics"], queryFn: () => statsFn() });
+
+  async function download() {
+    const { csv, filename } = await exportFn();
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const s = stats.data;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Stat label="Total guests" value={s?.totalGuests ?? "—"} />
+        <Stat label="Registered users" value={s?.totalRegistered ?? "—"} />
+        <Stat label="New today" value={s?.newToday ?? "—"} />
+        <Stat label="Daily active" value={s?.dau ?? "—"} />
+        <Stat label="Monthly active" value={s?.mau ?? "—"} />
+        <Stat label="Total searches" value={s?.totalSearches ?? "—"} />
+        <Stat label="Avg searches / user" value={s?.avgSearchesPerUser ?? "—"} />
+        <Stat label="Reports generated" value={s?.totalReports ?? "—"} />
+        <Stat label="Avg reports / user" value={s?.avgReportsPerUser ?? "—"} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="p-4">
+          <h3 className="mb-2 text-sm font-semibold">Most searched complaints</h3>
+          {!s?.topComplaints?.length ? (
+            <p className="text-sm text-muted-foreground">No data yet.</p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {s.topComplaints.map((c) => (
+                <li key={c.query} className="flex justify-between gap-3">
+                  <span className="truncate">{c.query}</span>
+                  <span className="text-muted-foreground">{c.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card className="p-4">
+          <h3 className="mb-2 text-sm font-semibold">Most recommended products</h3>
+          {!s?.topProducts?.length ? (
+            <p className="text-sm text-muted-foreground">No data yet.</p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {s.topProducts.map((c) => (
+                <li key={c.product} className="flex justify-between gap-3">
+                  <span className="truncate">{c.product}</span>
+                  <span className="text-muted-foreground">{c.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <Card className="p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Registered users</h3>
+          <Button variant="outline" size="sm" onClick={download}>
+            <Download className="mr-1 h-4 w-4" /> Export registered users
+          </Button>
+        </div>
+        {isLoading ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        ) : !data?.users.length ? (
+          <p className="text-sm text-muted-foreground">No registered users yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Registered</TableHead>
+                  <TableHead>Last login</TableHead>
+                  <TableHead>Searches</TableHead>
+                  <TableHead>Reports</TableHead>
+                  <TableHead>Favourites</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.users.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {u.avatar_url ? (
+                          <img src={u.avatar_url} alt="" className="h-7 w-7 rounded-full object-cover" />
+                        ) : (
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs">
+                            {(u.full_name ?? u.email ?? "?").slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="text-sm">{u.full_name ?? "—"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">{u.email ?? "—"}</TableCell>
+                    <TableCell className="text-xs">
+                      {new Date(u.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell>{u.search_count}</TableCell>
+                    <TableCell>{u.report_count}</TableCell>
+                    <TableCell className="max-w-[220px] text-xs">
+                      {u.favorites.length ? u.favorites.join(", ") : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={u.roles.includes("admin") ? "default" : "secondary"}>
+                        {u.roles.includes("admin") ? "Admin" : u.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <Card className="p-4">
+      <p className="text-2xl font-semibold">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
     </Card>
   );
 }

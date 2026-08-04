@@ -10,9 +10,8 @@ import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — AMS" }] }),
-  validateSearch: (s: Record<string, unknown>) => ({
-    next: typeof s.next === "string" ? s.next : "",
-  }),
+  validateSearch: (s: Record<string, unknown>): { next?: string } =>
+    typeof s.next === "string" && s.next ? { next: s.next } : {},
   component: AuthPage,
 });
 
@@ -87,9 +86,21 @@ function AuthPage() {
           </div>
         </div>
 
-        <Button type="button" variant="outline" className="w-full mb-4" onClick={onGoogle}>
+        <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>
           Continue with Google
         </Button>
+        <p className="mt-2 mb-4 text-[11px] leading-relaxed text-muted-foreground">
+          Google sign-in shares only your name, email address and profile picture. We use it solely
+          to personalise your experience and improve the app — your information is never shared with
+          third parties and never used for marketing without your explicit consent.
+        </p>
+        <p className="mb-4 text-[11px] text-muted-foreground">
+          You can also{" "}
+          <Link to="/" className="text-primary hover:underline">
+            continue as a guest
+          </Link>{" "}
+          — search, reports and references stay free without an account.
+        </p>
 
         <div className="relative my-4 text-center">
           <span className="text-xs uppercase tracking-wide text-muted-foreground bg-background px-2">

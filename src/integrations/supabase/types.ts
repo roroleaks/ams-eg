@@ -100,6 +100,57 @@ export type Database = {
         }
         Relationships: []
       }
+      favorites: {
+        Row: {
+          created_at: string
+          id: string
+          item_key: string
+          item_type: string
+          label: string | null
+          payload: Json | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_key: string
+          item_type: string
+          label?: string | null
+          payload?: Json | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_key?: string
+          item_type?: string
+          label?: string | null
+          payload?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      guest_events: {
+        Row: {
+          anon_id: string
+          created_at: string
+          event: string
+          id: string
+        }
+        Insert: {
+          anon_id: string
+          created_at?: string
+          event: string
+          id?: string
+        }
+        Update: {
+          anon_id?: string
+          created_at?: string
+          event?: string
+          id?: string
+        }
+        Relationships: []
+      }
       indexing_logs: {
         Row: {
           action: string
@@ -141,6 +192,48 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          last_login_at: string
+          provider: string | null
+          provider_account_id: string | null
+          report_count: number
+          search_count: number
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+          last_login_at?: string
+          provider?: string | null
+          provider_account_id?: string | null
+          report_count?: number
+          search_count?: number
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          last_login_at?: string
+          provider?: string | null
+          provider_account_id?: string | null
+          report_count?: number
+          search_count?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       search_analytics: {
         Row: {
           created_at: string
@@ -165,6 +258,36 @@ export type Database = {
           query?: string
           result_count?: number
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      search_history: {
+        Row: {
+          created_at: string
+          id: string
+          products: string[]
+          query: string
+          report_markdown: string | null
+          result_count: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          products?: string[]
+          query: string
+          report_markdown?: string | null
+          result_count?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          products?: string[]
+          query?: string
+          report_markdown?: string | null
+          result_count?: number
+          user_id?: string
         }
         Relationships: []
       }
@@ -236,7 +359,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "user"
+      app_role: "admin" | "user" | "owner" | "medical_editor" | "registered"
       doc_status: "pending" | "processing" | "indexed" | "failed"
     }
     CompositeTypes: {
@@ -365,7 +488,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "user"],
+      app_role: ["admin", "user", "owner", "medical_editor", "registered"],
       doc_status: ["pending", "processing", "indexed", "failed"],
     },
   },
