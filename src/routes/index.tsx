@@ -15,6 +15,8 @@ import {
   Stethoscope,
   ChevronDown,
   Printer,
+  Star,
+  LayoutDashboard,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -26,7 +28,16 @@ import { matchProducts, loadComplaintEmbeddings, type ProductMatch } from "@/lib
 import { embedQuery } from "@/lib/embed.functions";
 import { summarizeProductReport } from "@/lib/product-report.functions";
 import { searchLiterature, type LiteratureItem } from "@/lib/literature.functions";
-import { logSearch } from "@/lib/analytics.functions";
+import { logSearch, recordGuestEvent } from "@/lib/analytics.functions";
+import {
+  touchProfile,
+  saveSearchHistory,
+  attachReportToHistory,
+  toggleFavorite,
+  listFavorites,
+} from "@/lib/profile.functions";
+import { WelcomeBanner } from "@/components/WelcomeBanner";
+import { getAnonId } from "@/lib/guest";
 import { isAdmin as isAdminFn } from "@/lib/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { getProductImage } from "@/data/product-images";
@@ -57,6 +68,9 @@ const COMPLAINTS: string[] = [
 ];
 
 export const Route = createFileRoute("/")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    q: typeof s.q === "string" ? s.q : "",
+  }),
   head: () => ({
     meta: [
       { title: "AMS Product Advisor — Complaint-Based Clinical Decision Support" },
@@ -79,7 +93,8 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
-  const [query, setQuery] = useState("");
+  const { q: initialQuery } = Route.useSearch();
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [qVec, setQVec] = useState<Float32Array | null>(null);
   const [ready, setReady] = useState(false);
   const [embedding, setEmbedding] = useState(false);
@@ -88,34 +103,62 @@ function Index() {
   const literatureFn = useServerFn(searchLiterature);
   const logFn = useServerFn(logSearch);
   const isAdminServer = useServerFn(isAdminFn);
+  const guestEventFn = useServerFn(recordGuestEvent);
+  const touchProfileFn = useServerFn(touchProfile);
+  const saveHistoryFn = useServerFn(saveSearchHistory);
+  const attachReportFn = useServerFn(attachReportToHistory);
+  const toggleFavoriteFn = useServerFn(toggleFavorite);
+  const listFavoritesFn = useServerFn(listFavorites);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const historyIdRef = useRef<string | null>(null);
   const [report, setReport] = useState<string | null>(null);
   const [reporting, setReporting] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [literature, setLiterature] = useState<LiteratureItem[]>([]);
   const [litLoading, setLitLoading] = useState(false);
   const [useLiterature, setUseLiterature] = useState(true);
-  const [session, setSession] = useState<{ email?: string } | null>(null);
+  const [session, setSession] = useState<{
+    email?: string;
+    name?: string;
+    avatar?: string;
+  } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const seqRef = useRef(0);
   const lastLoggedRef = useRef<string>("");
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        setSession({ email: data.user.email });
-        isAdminServer().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
+    const apply = (user: { email?: string | null; user_metadata?: Record<string, any> } | null) => {
+      if (!user) {
+        setSession(null);
+        setIsAdmin(false);
+        setFavorites(new Set());
+        return;
       }
+      const meta = user.user_metadata ?? {};
+      setSession({
+        email: user.email ?? undefined,
+        name: meta.full_name ?? meta.name,
+        avatar: meta.avatar_url ?? meta.picture,
+      });
+      isAdminServer().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
+      touchProfileFn().catch(() => {});
+      listFavoritesFn()
+        .then(({ favorites: f }) =>
+          setFavorites(new Set(f.map((x: any) => `${x.item_type}:${x.item_key}`))),
+        )
+        .catch(() => {});
+    };
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) apply(data.user as any);
+      else guestEventFn({ data: { anon_id: getAnonId(), event: "visit" } }).catch(() => {});
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
-        setSession(s?.user ? { email: s.user.email } : null);
-        if (s?.user) {
-          isAdminServer().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
-        } else setIsAdmin(false);
+        apply((s?.user as any) ?? null);
       }
     });
     return () => sub.subscription.unsubscribe();
-  }, [isAdminServer]);
+  }, [isAdminServer, touchProfileFn, listFavoritesFn, guestEventFn]);
 
   // Preload both embedding matrices
   useEffect(() => {
@@ -184,20 +227,60 @@ function Index() {
     };
   }, [query, useLiterature, matches.length, literatureFn]);
 
-  // Analytics for signed-in users
+  // Analytics (guests included) + persistent history for registered users
   useEffect(() => {
     const q = query.trim();
-    if (!q || q.length < 2 || !session) return;
+    if (!q || q.length < 2) return;
     const handle = setTimeout(() => {
       const key = `${q}|${matches.length}`;
       if (lastLoggedRef.current === key) return;
       lastLoggedRef.current = key;
       logFn({
-        data: { query: q, result_count: matches.length, mode: qVec ? "hybrid" : "keyword" },
+        data: {
+          query: q,
+          result_count: matches.length,
+          mode: qVec ? "hybrid" : "keyword",
+          anon_id: session ? undefined : getAnonId(),
+        },
       }).catch(() => {});
-    }, 900);
+      if (session) {
+        saveHistoryFn({
+          data: {
+            query: q,
+            products: matches.map((m) => m.product),
+            result_count: matches.length,
+          },
+        })
+          .then(({ id }) => {
+            historyIdRef.current = id;
+          })
+          .catch(() => {});
+      } else {
+        historyIdRef.current = null;
+      }
+    }, 1200);
     return () => clearTimeout(handle);
-  }, [query, matches.length, qVec, logFn, session]);
+  }, [query, matches, qVec, logFn, session, saveHistoryFn]);
+
+  async function onToggleFavorite(
+    item_type: "product" | "complaint",
+    item_key: string,
+    label?: string,
+  ) {
+    if (!session) return;
+    const k = `${item_type}:${item_key}`;
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+    try {
+      await toggleFavoriteFn({ data: { item_type, item_key, label: label ?? item_key } });
+    } catch {
+      /* optimistic UI is close enough */
+    }
+  }
 
   async function handleReport() {
     if (reporting || !matches.length) return;
@@ -241,6 +324,13 @@ function Index() {
         },
       });
       setReport(markdown);
+      if (session && historyIdRef.current) {
+        attachReportFn({
+          data: { id: historyIdRef.current, report_markdown: markdown.slice(0, 60000) },
+        }).catch(() => {});
+      } else if (!session) {
+        guestEventFn({ data: { anon_id: getAnonId(), event: "report" } }).catch(() => {});
+      }
     } catch (e) {
       setReportError(e instanceof Error ? e.message : "Failed to generate report");
     } finally {
@@ -250,6 +340,7 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-background">
+      <WelcomeBanner signedIn={!!session} />
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-6xl px-6 py-8">
           <div className="flex items-start justify-between gap-3">
@@ -278,20 +369,36 @@ function Index() {
                 </Link>
               )}
               {session ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={async () => {
-                    await supabase.auth.signOut();
-                    setSession(null);
-                    setIsAdmin(false);
-                  }}
-                  title={session.email}
-                >
-                  <LogOut className="mr-1 h-4 w-4" /> Sign out
-                </Button>
+                <>
+                  <Link to="/dashboard">
+                    <Button variant="outline" size="sm">
+                      <LayoutDashboard className="mr-1 h-4 w-4" /> My dashboard
+                    </Button>
+                  </Link>
+                  {session.avatar ? (
+                    <img
+                      src={session.avatar}
+                      alt={session.name ?? session.email ?? "Account"}
+                      title={session.email}
+                      className="h-8 w-8 rounded-full object-cover ring-1 ring-border"
+                    />
+                  ) : null}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      setSession(null);
+                      setIsAdmin(false);
+                      setFavorites(new Set());
+                    }}
+                    title={session.email}
+                  >
+                    <LogOut className="mr-1 h-4 w-4" /> Sign out
+                  </Button>
+                </>
               ) : (
-                <Link to="/auth">
+                <Link to="/auth" search={{ next: "/" }}>
                   <Button variant="ghost" size="sm">
                     <LogIn className="mr-1 h-4 w-4" /> Sign in
                   </Button>
@@ -386,6 +493,26 @@ function Index() {
                   </span>
                 )}
               </p>
+              <div className="flex items-center gap-2">
+                {session && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5"
+                    onClick={() => onToggleFavorite("complaint", query.trim().toLowerCase(), query.trim())}
+                  >
+                    <Star
+                      className={`h-4 w-4 ${
+                        favorites.has(`complaint:${query.trim().toLowerCase()}`)
+                          ? "fill-primary text-primary"
+                          : ""
+                      }`}
+                    />
+                    {favorites.has(`complaint:${query.trim().toLowerCase()}`)
+                      ? "Saved complaint"
+                      : "Save complaint"}
+                  </Button>
+                )}
               <Button onClick={handleReport} disabled={reporting} className="h-9 gap-1.5">
                 {reporting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -398,6 +525,7 @@ function Index() {
                   ? "Regenerate report"
                   : "Clinical Product Report"}
               </Button>
+              </div>
             </div>
 
             {reportError && (
@@ -506,6 +634,9 @@ function Index() {
                   match={m}
                   complaint={query}
                   literature={literature}
+                  canFavorite={!!session}
+                  favorited={favorites.has(`product:${m.product}`)}
+                  onToggleFavorite={() => onToggleFavorite("product", m.product, m.product)}
                 />
               ))}
             </div>
@@ -602,10 +733,16 @@ function ProductCard({
   match,
   complaint,
   literature,
+  canFavorite,
+  favorited,
+  onToggleFavorite,
 }: {
   match: ProductMatch;
   complaint: string;
   literature: LiteratureItem[];
+  canFavorite: boolean;
+  favorited: boolean;
+  onToggleFavorite: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const img = getProductImage(match.product);
@@ -634,8 +771,21 @@ function ProductCard({
             <img src={img} alt={match.product} loading="lazy" className="h-full w-full object-contain" />
           </div>
         )}
-        <div className="min-w-0">
-          <h3 className="text-base font-semibold text-foreground">{match.product}</h3>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-base font-semibold text-foreground">{match.product}</h3>
+            {canFavorite && (
+              <button
+                type="button"
+                onClick={onToggleFavorite}
+                aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
+                title={favorited ? "Remove from favorites" : "Add to favorites"}
+                className="shrink-0 text-muted-foreground hover:text-primary"
+              >
+                <Star className={`h-4 w-4 ${favorited ? "fill-primary text-primary" : ""}`} />
+              </button>
+            )}
+          </div>
           <div className="mt-1.5 flex flex-wrap gap-1">
             {match.matchedIndications.slice(0, 4).map((ind) => (
               <Badge key={ind} variant="default" className="text-[11px] font-medium">

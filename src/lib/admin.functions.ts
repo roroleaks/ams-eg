@@ -502,3 +502,145 @@ export const isAdmin = createServerFn({ method: "GET" })
       .maybeSingle();
     return { isAdmin: !!data };
   });
+
+// ============ Registered users & user analytics ============
+
+export const listRegisteredUsers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [{ data: profiles }, { data: authUsers }, { data: favs }, { data: roles }] =
+      await Promise.all([
+        supabaseAdmin.from("profiles").select("*").order("created_at", { ascending: false }),
+        supabaseAdmin.auth.admin.listUsers({ perPage: 500 }),
+        supabaseAdmin.from("favorites").select("user_id, item_type, label"),
+        supabaseAdmin.from("user_roles").select("user_id, role"),
+      ]);
+    const authById = new Map((authUsers?.users ?? []).map((u: any) => [u.id, u]));
+    const favByUser = new Map<string, string[]>();
+    (favs ?? []).forEach((f: any) => {
+      if (f.item_type !== "product") return;
+      const arr = favByUser.get(f.user_id) ?? [];
+      arr.push(f.label ?? "");
+      favByUser.set(f.user_id, arr);
+    });
+    const rolesByUser = new Map<string, string[]>();
+    (roles ?? []).forEach((r: any) => {
+      const arr = rolesByUser.get(r.user_id) ?? [];
+      arr.push(r.role);
+      rolesByUser.set(r.user_id, arr);
+    });
+    return {
+      users: (profiles ?? []).map((p: any) => ({
+        id: p.id,
+        full_name: p.full_name,
+        email: p.email ?? authById.get(p.id)?.email ?? null,
+        avatar_url: p.avatar_url,
+        provider: p.provider,
+        created_at: p.created_at,
+        last_login_at: p.last_login_at ?? authById.get(p.id)?.last_sign_in_at ?? null,
+        search_count: p.search_count ?? 0,
+        report_count: p.report_count ?? 0,
+        favorites: favByUser.get(p.id) ?? [],
+        roles: rolesByUser.get(p.id) ?? [],
+        status: "Registered" as const,
+      })),
+    };
+  });
+
+export const userAnalytics = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const now = Date.now();
+    const dayAgo = new Date(now - 86400_000).toISOString();
+    const monthAgo = new Date(now - 30 * 86400_000).toISOString();
+    const todayStart = new Date(new Date().toISOString().slice(0, 10)).toISOString();
+
+    const [{ data: profiles }, { data: guests }, { data: searches }, { data: history }] =
+      await Promise.all([
+        supabaseAdmin.from("profiles").select("id, created_at, last_login_at, report_count"),
+        supabaseAdmin.from("guest_events").select("anon_id, event, created_at").limit(10000),
+        supabaseAdmin.from("search_analytics").select("query, user_id, created_at").limit(10000),
+        supabaseAdmin.from("search_history").select("products").limit(5000),
+      ]);
+
+    const p = profiles ?? [];
+    const g = guests ?? [];
+    const s = searches ?? [];
+    const uniqGuests = new Set(g.map((r: any) => r.anon_id)).size;
+    const dau = new Set([
+      ...p.filter((r: any) => r.last_login_at >= dayAgo).map((r: any) => r.id),
+      ...g.filter((r: any) => r.created_at >= dayAgo).map((r: any) => r.anon_id),
+    ]).size;
+    const mau = new Set([
+      ...p.filter((r: any) => r.last_login_at >= monthAgo).map((r: any) => r.id),
+      ...g.filter((r: any) => r.created_at >= monthAgo).map((r: any) => r.anon_id),
+    ]).size;
+
+    const byQuery = new Map<string, number>();
+    s.forEach((r: any) => {
+      const q = (r.query ?? "").toLowerCase().trim();
+      if (q) byQuery.set(q, (byQuery.get(q) ?? 0) + 1);
+    });
+    const byProduct = new Map<string, number>();
+    (history ?? []).forEach((r: any) =>
+      (r.products ?? []).forEach((n: string) => byProduct.set(n, (byProduct.get(n) ?? 0) + 1)),
+    );
+
+    const totalReports =
+      p.reduce((sum: number, r: any) => sum + (r.report_count ?? 0), 0) +
+      g.filter((r: any) => r.event === "report").length;
+    const totalUsers = p.length + uniqGuests;
+
+    return {
+      totalGuests: uniqGuests,
+      totalRegistered: p.length,
+      newToday: p.filter((r: any) => r.created_at >= todayStart).length,
+      dau,
+      mau,
+      totalSearches: s.length,
+      avgSearchesPerUser: totalUsers ? +(s.length / totalUsers).toFixed(1) : 0,
+      avgReportsPerUser: totalUsers ? +(totalReports / totalUsers).toFixed(1) : 0,
+      totalReports,
+      topComplaints: [...byQuery.entries()]
+        .map(([query, count]) => ({ query, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10),
+      topProducts: [...byProduct.entries()]
+        .map(([product, count]) => ({ product, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10),
+    };
+  });
+
+export const exportRegisteredUsers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("full_name, email, created_at, last_login_at, search_count, report_count")
+      .order("created_at", { ascending: false });
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [
+      ["Name", "Email", "Registration Date", "Last Login", "Searches", "Reports"].join(","),
+      ...(profiles ?? []).map((r: any) =>
+        [
+          esc(r.full_name),
+          esc(r.email),
+          esc(r.created_at),
+          esc(r.last_login_at),
+          r.search_count ?? 0,
+          r.report_count ?? 0,
+        ].join(","),
+      ),
+    ];
+    return {
+      csv: "\uFEFF" + rows.join("\r\n"),
+      filename: `registered-users-${new Date().toISOString().slice(0, 10)}.csv`,
+    };
+  });

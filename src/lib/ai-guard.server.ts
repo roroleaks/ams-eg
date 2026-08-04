@@ -26,6 +26,11 @@ function makeClient(token?: string): SupabaseClient<Database> {
   });
 }
 
+/** Publishable-key client for anonymous (guest) writes allowed by RLS. */
+export function publicClient(): SupabaseClient<Database> {
+  return makeClient();
+}
+
 export interface Caller {
   userId: string | null;
   supabase: SupabaseClient<Database> | null;

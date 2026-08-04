@@ -1,0 +1,150 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { bumpCounter } from "@/lib/profile.server";
+
+/** Creates the profile on first sign-in and refreshes last_login_at afterwards. */
+export const touchProfile = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const claims = context.claims as Record<string, any>;
+    const meta = (claims.user_metadata ?? {}) as Record<string, any>;
+    const patch = {
+      id: context.userId,
+      email: (claims.email as string) ?? null,
+      full_name: meta.full_name ?? meta.name ?? null,
+      avatar_url: meta.avatar_url ?? meta.picture ?? null,
+      provider: (claims.app_metadata as any)?.provider ?? null,
+      provider_account_id: meta.sub ?? meta.provider_id ?? null,
+      last_login_at: new Date().toISOString(),
+    };
+    const { data, error } = await context.supabase
+      .from("profiles")
+      .upsert(patch, { onConflict: "id" })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return { profile: data };
+  });
+
+export const getMyProfile = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data } = await context.supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", context.userId)
+      .maybeSingle();
+    return { profile: data };
+  });
+
+const HistoryInput = z.object({
+  query: z.string().min(1).max(500),
+  products: z.array(z.string().max(120)).max(30).default([]),
+  result_count: z.number().int().min(0).max(1000).default(0),
+  report_markdown: z.string().max(60000).nullable().optional(),
+});
+
+export const saveSearchHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => HistoryInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: row, error } = await context.supabase
+      .from("search_history")
+      .insert({
+        user_id: context.userId,
+        query: data.query,
+        products: data.products,
+        result_count: data.result_count,
+        report_markdown: data.report_markdown ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    await bumpCounter(context, "search_count");
+    return { id: row.id };
+  });
+
+export const attachReportToHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ id: z.string().uuid(), report_markdown: z.string().max(60000) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await context.supabase
+      .from("search_history")
+      .update({ report_markdown: data.report_markdown })
+      .eq("id", data.id)
+      .eq("user_id", context.userId);
+    await bumpCounter(context, "report_count");
+    return { ok: true };
+  });
+
+export const listSearchHistory = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("search_history")
+      .select("id, query, products, result_count, report_markdown, created_at")
+      .eq("user_id", context.userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw new Error(error.message);
+    return { history: data ?? [] };
+  });
+
+export const deleteSearchHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid().optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    let q = context.supabase.from("search_history").delete().eq("user_id", context.userId);
+    if (data.id) q = q.eq("id", data.id);
+    const { error } = await q;
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+const FavInput = z.object({
+  item_type: z.enum(["product", "complaint", "report"]),
+  item_key: z.string().min(1).max(200),
+  label: z.string().max(200).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const toggleFavorite = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => FavInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: existing } = await context.supabase
+      .from("favorites")
+      .select("id")
+      .eq("user_id", context.userId)
+      .eq("item_type", data.item_type)
+      .eq("item_key", data.item_key)
+      .maybeSingle();
+    if (existing) {
+      await context.supabase.from("favorites").delete().eq("id", existing.id);
+      return { favorited: false };
+    }
+    const { error } = await context.supabase.from("favorites").insert({
+      user_id: context.userId,
+      item_type: data.item_type,
+      item_key: data.item_key,
+      label: data.label ?? data.item_key,
+      payload: (data.payload ?? null) as never,
+    });
+    if (error) throw new Error(error.message);
+    return { favorited: true };
+  });
+
+export const listFavorites = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("favorites")
+      .select("id, item_type, item_key, label, payload, created_at")
+      .eq("user_id", context.userId)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return { favorites: data ?? [] };
+  });
