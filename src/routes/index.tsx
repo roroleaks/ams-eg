@@ -68,9 +68,8 @@ const COMPLAINTS: string[] = [
 ];
 
 export const Route = createFileRoute("/")({
-  validateSearch: (s: Record<string, unknown>) => ({
-    q: typeof s.q === "string" ? s.q : "",
-  }),
+  validateSearch: (s: Record<string, unknown>): { q?: string } =>
+    typeof s.q === "string" && s.q ? { q: s.q } : {},
   head: () => ({
     meta: [
       { title: "AMS Product Advisor — Complaint-Based Clinical Decision Support" },

@@ -97,7 +97,7 @@ function AuthPage() {
         </p>
         <p className="mb-4 text-[11px] text-muted-foreground">
           You can also{" "}
-          <Link to="/" search={{ q: "" }} className="text-primary hover:underline">
+          <Link to="/" className="text-primary hover:underline">
             continue as a guest
           </Link>{" "}
           — search, reports and references stay free without an account.
