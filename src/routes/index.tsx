@@ -950,10 +950,10 @@ function ClinicalReport({
   return (
     <div id="clinical-report" className="animate-fade-in mb-10 print:m-0">
       <div className="surface-card overflow-hidden print:rounded-none print:border-0 print:shadow-none">
-        <div className="bg-gradient-primary flex flex-wrap items-center justify-between gap-3 px-6 py-5 print:hidden">
+        <div className="bg-gradient-primary grid gap-3 px-4 py-4 print:hidden sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:px-6 sm:py-5">
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-sm font-semibold text-primary-foreground">
-              <Sparkles className="h-4 w-4" /> Clinical Evidence Report
+              <Sparkles className="h-4 w-4 shrink-0" /> Clinical Evidence Report
             </p>
             <p className="mt-0.5 truncate text-xs text-primary-foreground/80">
               {introTitle && introTitle.length < 90 ? introTitle : complaint}
@@ -964,10 +964,11 @@ function ClinicalReport({
               variant="secondary"
               size="sm"
               onClick={() => window.print()}
-              className="h-9 gap-1.5 rounded-full"
+              className="h-9 flex-1 gap-1.5 rounded-full sm:flex-none"
             >
               <Printer className="h-4 w-4" /> Export PDF
             </Button>
+
             <button
               type="button"
               onClick={onDismiss}
@@ -1135,9 +1136,9 @@ function ProductCard({
       style={{ animationDelay: `${Math.min(index, 6) * 45}ms` }}
       className="surface-card hover-lift animate-fade-in flex flex-col overflow-hidden hover:border-primary/30"
     >
-      <div className="flex gap-4 border-b border-border/70 bg-[var(--gradient-surface)] p-5">
+      <div className="flex gap-3 border-b border-border/70 bg-[var(--gradient-surface)] p-4 sm:gap-4 sm:p-5">
         {img && (
-          <div className="grid h-24 w-20 shrink-0 place-items-center overflow-hidden rounded-xl bg-card p-1.5 ring-1 ring-border">
+          <div className="grid h-20 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-card p-1.5 ring-1 ring-border sm:h-24 sm:w-20">
             <img
               src={img}
               alt={match.product}
@@ -1148,9 +1149,10 @@ function ProductCard({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="truncate text-lg font-semibold tracking-tight text-foreground">
+            <h3 className="min-w-0 break-words text-base font-semibold tracking-tight text-foreground sm:truncate sm:text-lg">
               {match.product}
             </h3>
+
             {canFavorite && (
               <button
                 type="button"
