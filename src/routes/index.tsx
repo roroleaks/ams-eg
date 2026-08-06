@@ -638,7 +638,7 @@ function Index() {
                   />
                 )}
 
-                <div className="grid gap-5 lg:grid-cols-2">
+                <div className="grid gap-4 sm:gap-5 lg:grid-cols-2">
                   {matches.map((m, i) => (
                     <ProductCard
                       key={m.product}
@@ -720,8 +720,8 @@ function SearchBox({
   return (
     <div className="relative">
       <Search
-        className={`pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground ${
-          large ? "h-5 w-5" : "h-4.5 w-4.5"
+        className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground sm:left-5 ${
+          large ? "h-4.5 w-4.5 sm:h-5 sm:w-5" : "h-4 w-4 sm:h-4.5 sm:w-4.5"
         }`}
       />
       <input
@@ -730,13 +730,14 @@ function SearchBox({
         onChange={(e) => setQuery(e.target.value)}
         aria-label="Search by patient complaint, diagnosis, symptom, laboratory finding or product"
         placeholder="Search by patient complaint, diagnosis, symptom, laboratory finding or product..."
-        className={`w-full rounded-full border border-border bg-card pl-13 text-foreground shadow-[var(--shadow-card)] outline-none transition-all placeholder:text-muted-foreground/80 focus:border-primary/40 focus:ring-4 focus:ring-ring/15 ${
+        className={`w-full rounded-full border border-border bg-card pl-11 text-foreground shadow-[var(--shadow-card)] outline-none transition-all placeholder:text-muted-foreground/80 focus:border-primary/40 focus:ring-4 focus:ring-ring/15 sm:pl-13 ${
           large
-            ? "h-16 pr-24 text-base sm:pr-44 sm:text-[17px]"
-            : "h-13 pr-20 text-sm sm:pr-40 sm:text-base"
+            ? "h-14 pr-20 text-[15px] sm:h-16 sm:pr-44 sm:text-[17px]"
+            : "h-12 pr-20 text-sm sm:h-13 sm:pr-40 sm:text-base"
         }`}
 
       />
+
       <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
         {query && (
           <button
