@@ -562,12 +562,12 @@ function Index() {
               )
             ) : (
               <>
-                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
+                <div className="mb-6 grid gap-3 print:hidden sm:flex sm:flex-wrap sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <h2 className="truncate text-lg font-semibold tracking-tight text-foreground">
+                    <h2 className="text-base font-semibold tracking-tight text-foreground sm:truncate sm:text-lg">
                       {matches.length} product{matches.length === 1 ? "" : "s"} for “{query.trim()}”
                     </h2>
-                    <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                       Matched against the AMS indication database
                       {litLoading && (
                         <span className="inline-flex items-center gap-1">
@@ -577,12 +577,12 @@ function Index() {
                       )}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {session && (
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-10 gap-1.5 rounded-full"
+                        className="h-10 flex-1 gap-1.5 rounded-full sm:flex-none"
                         onClick={() =>
                           onToggleFavorite("complaint", query.trim().toLowerCase(), query.trim())
                         }
@@ -602,21 +602,24 @@ function Index() {
                     <Button
                       onClick={handleReport}
                       disabled={reporting}
-                      className="bg-gradient-primary h-10 gap-2 rounded-full px-5 font-semibold shadow-md transition-all hover:shadow-lg disabled:opacity-70"
+                      className="bg-gradient-primary h-10 flex-1 gap-2 rounded-full px-4 text-sm font-semibold shadow-md transition-all hover:shadow-lg disabled:opacity-70 sm:flex-none sm:px-5"
                     >
                       {reporting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                       ) : (
-                        <Wand2 className="h-4 w-4" />
+                        <Wand2 className="h-4 w-4 shrink-0" />
                       )}
-                      {reporting
-                        ? "Building report…"
-                        : report
-                          ? "Regenerate report"
-                          : "Clinical Evidence Report"}
+                      <span className="truncate">
+                        {reporting
+                          ? "Building report…"
+                          : report
+                            ? "Regenerate report"
+                            : "Clinical Evidence Report"}
+                      </span>
                     </Button>
                   </div>
                 </div>
+
 
                 {reportError && (
                   <div className="mb-4 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
