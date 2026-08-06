@@ -562,12 +562,12 @@ function Index() {
               )
             ) : (
               <>
-                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
+                <div className="mb-6 grid gap-3 print:hidden sm:flex sm:flex-wrap sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <h2 className="truncate text-lg font-semibold tracking-tight text-foreground">
+                    <h2 className="text-base font-semibold tracking-tight text-foreground sm:truncate sm:text-lg">
                       {matches.length} product{matches.length === 1 ? "" : "s"} for “{query.trim()}”
                     </h2>
-                    <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                       Matched against the AMS indication database
                       {litLoading && (
                         <span className="inline-flex items-center gap-1">
@@ -577,12 +577,12 @@ function Index() {
                       )}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {session && (
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-10 gap-1.5 rounded-full"
+                        className="h-10 flex-1 gap-1.5 rounded-full sm:flex-none"
                         onClick={() =>
                           onToggleFavorite("complaint", query.trim().toLowerCase(), query.trim())
                         }
@@ -602,21 +602,24 @@ function Index() {
                     <Button
                       onClick={handleReport}
                       disabled={reporting}
-                      className="bg-gradient-primary h-10 gap-2 rounded-full px-5 font-semibold shadow-md transition-all hover:shadow-lg disabled:opacity-70"
+                      className="bg-gradient-primary h-10 flex-1 gap-2 rounded-full px-4 text-sm font-semibold shadow-md transition-all hover:shadow-lg disabled:opacity-70 sm:flex-none sm:px-5"
                     >
                       {reporting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                       ) : (
-                        <Wand2 className="h-4 w-4" />
+                        <Wand2 className="h-4 w-4 shrink-0" />
                       )}
-                      {reporting
-                        ? "Building report…"
-                        : report
-                          ? "Regenerate report"
-                          : "Clinical Evidence Report"}
+                      <span className="truncate">
+                        {reporting
+                          ? "Building report…"
+                          : report
+                            ? "Regenerate report"
+                            : "Clinical Evidence Report"}
+                      </span>
                     </Button>
                   </div>
                 </div>
+
 
                 {reportError && (
                   <div className="mb-4 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
@@ -635,7 +638,7 @@ function Index() {
                   />
                 )}
 
-                <div className="grid gap-5 lg:grid-cols-2">
+                <div className="grid gap-4 sm:gap-5 lg:grid-cols-2">
                   {matches.map((m, i) => (
                     <ProductCard
                       key={m.product}
@@ -717,8 +720,8 @@ function SearchBox({
   return (
     <div className="relative">
       <Search
-        className={`pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground ${
-          large ? "h-5 w-5" : "h-4.5 w-4.5"
+        className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground sm:left-5 ${
+          large ? "h-4.5 w-4.5 sm:h-5 sm:w-5" : "h-4 w-4 sm:h-4.5 sm:w-4.5"
         }`}
       />
       <input
@@ -727,13 +730,14 @@ function SearchBox({
         onChange={(e) => setQuery(e.target.value)}
         aria-label="Search by patient complaint, diagnosis, symptom, laboratory finding or product"
         placeholder="Search by patient complaint, diagnosis, symptom, laboratory finding or product..."
-        className={`w-full rounded-full border border-border bg-card pl-13 text-foreground shadow-[var(--shadow-card)] outline-none transition-all placeholder:text-muted-foreground/80 focus:border-primary/40 focus:ring-4 focus:ring-ring/15 ${
+        className={`w-full rounded-full border border-border bg-card pl-11 text-foreground shadow-[var(--shadow-card)] outline-none transition-all placeholder:text-muted-foreground/80 focus:border-primary/40 focus:ring-4 focus:ring-ring/15 sm:pl-13 ${
           large
-            ? "h-16 pr-24 text-base sm:pr-44 sm:text-[17px]"
-            : "h-13 pr-20 text-sm sm:pr-40 sm:text-base"
+            ? "h-14 pr-20 text-[15px] sm:h-16 sm:pr-44 sm:text-[17px]"
+            : "h-12 pr-20 text-sm sm:h-13 sm:pr-40 sm:text-base"
         }`}
 
       />
+
       <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
         {query && (
           <button
@@ -842,7 +846,7 @@ function Collapsible({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-accent/60"
+        className="flex w-full items-center gap-2.5 px-4 py-3.5 text-left transition-colors hover:bg-accent/60 sm:gap-3 sm:px-5 sm:py-4"
       >
         {icon}
         <span className="min-w-0 flex-1">
@@ -857,7 +861,10 @@ function Collapsible({
           }`}
         />
       </button>
-      {open && <div className="animate-fade-in border-t border-border/70 p-5">{children}</div>}
+      {open && (
+        <div className="animate-fade-in border-t border-border/70 p-4 sm:p-5">{children}</div>
+      )}
+
     </section>
   );
 }
@@ -946,10 +953,10 @@ function ClinicalReport({
   return (
     <div id="clinical-report" className="animate-fade-in mb-10 print:m-0">
       <div className="surface-card overflow-hidden print:rounded-none print:border-0 print:shadow-none">
-        <div className="bg-gradient-primary flex flex-wrap items-center justify-between gap-3 px-6 py-5 print:hidden">
+        <div className="bg-gradient-primary grid gap-3 px-4 py-4 print:hidden sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:px-6 sm:py-5">
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-sm font-semibold text-primary-foreground">
-              <Sparkles className="h-4 w-4" /> Clinical Evidence Report
+              <Sparkles className="h-4 w-4 shrink-0" /> Clinical Evidence Report
             </p>
             <p className="mt-0.5 truncate text-xs text-primary-foreground/80">
               {introTitle && introTitle.length < 90 ? introTitle : complaint}
@@ -960,10 +967,11 @@ function ClinicalReport({
               variant="secondary"
               size="sm"
               onClick={() => window.print()}
-              className="h-9 gap-1.5 rounded-full"
+              className="h-9 flex-1 gap-1.5 rounded-full sm:flex-none"
             >
               <Printer className="h-4 w-4" /> Export PDF
             </Button>
+
             <button
               type="button"
               onClick={onDismiss}
@@ -979,9 +987,10 @@ function ClinicalReport({
           <img src="/ams-wordmark.png" alt="America Medic & Science" className="h-10 w-auto" />
         </div>
 
-        <div className="space-y-4 bg-muted/30 p-4 sm:p-6 print:bg-white print:p-0">
+        <div className="space-y-3 bg-muted/30 p-3 sm:space-y-4 sm:p-6 print:bg-white print:p-0">
           {sections.length === 0 ? (
-            <article className="surface-card p-5 sm:p-6">
+            <article className="surface-card p-4 sm:p-6">
+
               <Markdown>{markdown}</Markdown>
             </article>
           ) : (
@@ -996,7 +1005,7 @@ function ClinicalReport({
                   <Markdown>{s.body.join("\n")}</Markdown>
                 </Collapsible>
               ) : (
-                <article key={s.title} className="surface-card p-5 sm:p-6">
+                <article key={s.title} className="surface-card p-4 sm:p-6">
                   <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-primary">
                     {sectionIcon(s.title)}
                     {s.title}
@@ -1131,9 +1140,9 @@ function ProductCard({
       style={{ animationDelay: `${Math.min(index, 6) * 45}ms` }}
       className="surface-card hover-lift animate-fade-in flex flex-col overflow-hidden hover:border-primary/30"
     >
-      <div className="flex gap-4 border-b border-border/70 bg-[var(--gradient-surface)] p-5">
+      <div className="flex gap-3 border-b border-border/70 bg-[var(--gradient-surface)] p-4 sm:gap-4 sm:p-5">
         {img && (
-          <div className="grid h-24 w-20 shrink-0 place-items-center overflow-hidden rounded-xl bg-card p-1.5 ring-1 ring-border">
+          <div className="grid h-20 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-card p-1.5 ring-1 ring-border sm:h-24 sm:w-20">
             <img
               src={img}
               alt={match.product}
@@ -1144,9 +1153,10 @@ function ProductCard({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="truncate text-lg font-semibold tracking-tight text-foreground">
+            <h3 className="min-w-0 break-words text-base font-semibold tracking-tight text-foreground sm:truncate sm:text-lg">
               {match.product}
             </h3>
+
             {canFavorite && (
               <button
                 type="button"
@@ -1185,7 +1195,7 @@ function ProductCard({
         </div>
       </div>
 
-      <div className="flex-1 space-y-5 p-5 text-sm">
+      <div className="flex-1 space-y-4 p-4 text-sm sm:space-y-5 sm:p-5">
         <Section title="Official indications" icon={<ClipboardList className="h-3.5 w-3.5" />}>
           <ul className="ml-4 list-disc space-y-1 text-foreground/90">
             {match.allIndications.slice(0, 6).map((i) => (
