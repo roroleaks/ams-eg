@@ -846,7 +846,7 @@ function Collapsible({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-accent/60"
+        className="flex w-full items-center gap-2.5 px-4 py-3.5 text-left transition-colors hover:bg-accent/60 sm:gap-3 sm:px-5 sm:py-4"
       >
         {icon}
         <span className="min-w-0 flex-1">
@@ -861,7 +861,10 @@ function Collapsible({
           }`}
         />
       </button>
-      {open && <div className="animate-fade-in border-t border-border/70 p-5">{children}</div>}
+      {open && (
+        <div className="animate-fade-in border-t border-border/70 p-4 sm:p-5">{children}</div>
+      )}
+
     </section>
   );
 }
@@ -984,9 +987,10 @@ function ClinicalReport({
           <img src="/ams-wordmark.png" alt="America Medic & Science" className="h-10 w-auto" />
         </div>
 
-        <div className="space-y-4 bg-muted/30 p-4 sm:p-6 print:bg-white print:p-0">
+        <div className="space-y-3 bg-muted/30 p-3 sm:space-y-4 sm:p-6 print:bg-white print:p-0">
           {sections.length === 0 ? (
-            <article className="surface-card p-5 sm:p-6">
+            <article className="surface-card p-4 sm:p-6">
+
               <Markdown>{markdown}</Markdown>
             </article>
           ) : (
@@ -1001,7 +1005,7 @@ function ClinicalReport({
                   <Markdown>{s.body.join("\n")}</Markdown>
                 </Collapsible>
               ) : (
-                <article key={s.title} className="surface-card p-5 sm:p-6">
+                <article key={s.title} className="surface-card p-4 sm:p-6">
                   <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-primary">
                     {sectionIcon(s.title)}
                     {s.title}
