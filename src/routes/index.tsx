@@ -1191,7 +1191,7 @@ function ProductCard({
         </div>
       </div>
 
-      <div className="flex-1 space-y-5 p-5 text-sm">
+      <div className="flex-1 space-y-4 p-4 text-sm sm:space-y-5 sm:p-5">
         <Section title="Official indications" icon={<ClipboardList className="h-3.5 w-3.5" />}>
           <ul className="ml-4 list-disc space-y-1 text-foreground/90">
             {match.allIndications.slice(0, 6).map((i) => (
