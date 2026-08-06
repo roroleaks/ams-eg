@@ -727,9 +727,12 @@ function SearchBox({
         onChange={(e) => setQuery(e.target.value)}
         aria-label="Search by patient complaint, diagnosis, symptom, laboratory finding or product"
         placeholder="Search by patient complaint, diagnosis, symptom, laboratory finding or product..."
-        className={`w-full rounded-full border border-border bg-card pl-13 pr-28 text-foreground shadow-[var(--shadow-card)] outline-none transition-all placeholder:text-muted-foreground/80 focus:border-primary/40 focus:ring-4 focus:ring-ring/15 ${
-          large ? "h-16 text-base sm:text-[17px]" : "h-13 text-sm sm:text-base"
+        className={`w-full rounded-full border border-border bg-card pl-13 text-foreground shadow-[var(--shadow-card)] outline-none transition-all placeholder:text-muted-foreground/80 focus:border-primary/40 focus:ring-4 focus:ring-ring/15 ${
+          large
+            ? "h-16 pr-24 text-base sm:pr-44 sm:text-[17px]"
+            : "h-13 pr-20 text-sm sm:pr-40 sm:text-base"
         }`}
+
       />
       <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
         {query && (
