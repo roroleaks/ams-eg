@@ -698,6 +698,10 @@ function Index() {
           </main>
         </>
       )}
+
+      <footer className="border-t border-border/50 py-4 text-center print:hidden">
+        <p className="text-[10px] text-muted-foreground/70">Created by Dr Raouf Roshdy</p>
+      </footer>
     </div>
   );
 }
