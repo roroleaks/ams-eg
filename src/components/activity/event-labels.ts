@@ -1,0 +1,31 @@
+export const EVENT_LABELS: Record<string, string> = {
+  user_signed_in: "Signed in",
+  user_signed_out: "Signed out",
+  account_created: "Account created",
+  search_performed: "Search performed",
+  complaint_selected: "Complaint selected",
+  search_completed: "Search completed",
+  search_no_result: "Search with no useful match",
+  product_result_viewed: "Product result viewed",
+  product_details_opened: "Product details opened",
+  product_favorited: "Product favourited",
+  product_unfavorited: "Product unfavourited",
+  evidence_report_opened: "Evidence report opened",
+  reference_opened: "Scientific reference opened",
+  monograph_opened: "Monograph opened",
+  report_generated: "Clinical report generated",
+  report_opened: "Clinical report opened",
+  report_exported: "Clinical report exported",
+  search_saved: "Search saved",
+  report_saved: "Report saved",
+  product_saved: "Product saved",
+};
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  auth: "Authentication",
+  search: "Search",
+  product: "Product interaction",
+  evidence: "Evidence",
+  report: "Reports",
+  saved: "Saved content",
+};
