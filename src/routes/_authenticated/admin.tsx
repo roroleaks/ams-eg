@@ -10,6 +10,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollText } from "lucide-react";
+import { ActivityAnalyticsTab } from "@/components/admin/ActivityAnalyticsTab";
+import { AuditLogTab } from "@/components/admin/AuditLogTab";
 import {
   Table,
   TableBody,
