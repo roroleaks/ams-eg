@@ -44,6 +44,8 @@ import {
 } from "@/lib/profile.functions";
 import { WelcomeBanner } from "@/components/WelcomeBanner";
 import { getAnonId } from "@/lib/guest";
+import { track } from "@/lib/activity";
+import { normalizeComplaint } from "@/lib/activity-privacy";
 import { isAdmin as isAdminFn } from "@/lib/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { getProductImage } from "@/data/product-images";
@@ -171,6 +173,8 @@ function Index() {
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
         apply((s?.user as any) ?? null);
+        if (event === "SIGNED_IN") track({ event_type: "user_signed_in" });
+        if (event === "SIGNED_OUT") track({ event_type: "user_signed_out" });
       }
     });
     return () => sub.subscription.unsubscribe();
@@ -259,6 +263,17 @@ function Index() {
           anon_id: session ? undefined : getAnonId(),
         },
       }).catch(() => {});
+      // Governance/analytics only — never influences ranking or recommendations.
+      const complaint = normalizeComplaint(q, matches[0]?.matchedIndications?.[0] ?? null);
+      track({ event_type: "search_performed", complaint_id: complaint, result_count: matches.length });
+      if (matches.length === 0) {
+        track({ event_type: "search_no_result", complaint_id: complaint, result_count: 0 });
+      } else {
+        track({ event_type: "search_completed", complaint_id: complaint, result_count: matches.length });
+        matches.slice(0, 5).forEach((m) =>
+          track({ event_type: "product_result_viewed", complaint_id: complaint, product_id: m.product }),
+        );
+      }
       if (session) {
         saveHistoryFn({
           data: {
@@ -293,6 +308,13 @@ function Index() {
     });
     try {
       await toggleFavoriteFn({ data: { item_type, item_key, label: label ?? item_key } });
+      const adding = !favorites.has(k);
+      if (item_type === "product") {
+        track({ event_type: adding ? "product_favorited" : "product_unfavorited", product_id: item_key });
+        if (adding) track({ event_type: "product_saved", product_id: item_key });
+      } else if (adding) {
+        track({ event_type: "search_saved", complaint_id: normalizeComplaint(item_key) });
+      }
     } catch {
       /* optimistic UI is close enough */
     }
@@ -340,10 +362,20 @@ function Index() {
         },
       });
       setReport(markdown);
+      track({
+        event_type: "report_generated",
+        complaint_raw: query.trim(),
+        report_id: historyIdRef.current,
+        result_count: matches.length,
+      });
+      matches.slice(0, 5).forEach((m) =>
+        track({ event_type: "report_opened", product_id: m.product, report_id: historyIdRef.current }),
+      );
       if (session && historyIdRef.current) {
         attachReportFn({
           data: { id: historyIdRef.current, report_markdown: markdown.slice(0, 60000) },
         }).catch(() => {});
+        track({ event_type: "report_saved", report_id: historyIdRef.current });
       } else if (!session) {
         guestEventFn({ data: { anon_id: getAnonId(), event: "report" } }).catch(() => {});
       }
@@ -405,10 +437,15 @@ function Index() {
             )}
             {session ? (
               <>
-                <Link to="/dashboard">
+                <Link to="/activity">
                   <Button variant="outline" size="sm" className="rounded-full">
                     <LayoutDashboard className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">My dashboard</span>
+                    <span className="hidden sm:inline">My activity</span>
+                  </Button>
+                </Link>
+                <Link to="/dashboard">
+                  <Button variant="ghost" size="sm" className="hidden rounded-full sm:inline-flex">
+                    Dashboard
                   </Button>
                 </Link>
                 {session.avatar ? (
@@ -892,6 +929,12 @@ function LitLinks({ item }: { item: LiteratureItem }) {
           href={l.href}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() =>
+            track({
+              event_type: l.label === "Publisher" ? "monograph_opened" : "reference_opened",
+              reference_id: item.doi ?? item.pmid ?? item.pmcid ?? l.label,
+            })
+          }
           className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/5"
         >
           <Link2 className="h-3 w-3" />
@@ -970,7 +1013,10 @@ function ClinicalReport({
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => window.print()}
+              onClick={() => {
+                track({ event_type: "report_exported", complaint_raw: complaint });
+                window.print();
+              }}
               className="h-9 flex-1 gap-1.5 rounded-full sm:flex-none"
             >
               <Printer className="h-4 w-4" /> Export PDF
@@ -1265,7 +1311,13 @@ function ProductCard({
             variant="outline"
             size="sm"
             className="h-10 w-full gap-1.5 rounded-full"
-            onClick={() => setOpen((o) => !o)}
+            onClick={() => {
+              if (!open) {
+                track({ event_type: "product_details_opened", product_id: match.product });
+                track({ event_type: "evidence_report_opened", product_id: match.product });
+              }
+              setOpen((o) => !o);
+            }}
             aria-expanded={open}
           >
             <ChevronDown
