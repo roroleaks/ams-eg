@@ -14,6 +14,81 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_events: {
+        Row: {
+          category: string
+          complaint_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          immutable: boolean
+          organization: string | null
+          product_id: string | null
+          reference_id: string | null
+          report_id: string | null
+          result_count: number | null
+          session_id: string | null
+          user_id: string | null
+          user_role: string | null
+        }
+        Insert: {
+          category: string
+          complaint_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          immutable?: boolean
+          organization?: string | null
+          product_id?: string | null
+          reference_id?: string | null
+          report_id?: string | null
+          result_count?: number | null
+          session_id?: string | null
+          user_id?: string | null
+          user_role?: string | null
+        }
+        Update: {
+          category?: string
+          complaint_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          immutable?: boolean
+          organization?: string | null
+          product_id?: string | null
+          reference_id?: string | null
+          report_id?: string | null
+          result_count?: number | null
+          session_id?: string | null
+          user_id?: string | null
+          user_role?: string | null
+        }
+        Relationships: []
+      }
+      app_settings: {
+        Row: {
+          created_at: string
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          created_at?: string
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
       document_chunks: {
         Row: {
           chunk_index: number

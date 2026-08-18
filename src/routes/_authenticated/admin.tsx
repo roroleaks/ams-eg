@@ -10,6 +10,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollText } from "lucide-react";
+import { ActivityAnalyticsTab } from "@/components/admin/ActivityAnalyticsTab";
+import { AuditLogTab } from "@/components/admin/AuditLogTab";
 import {
   Table,
   TableBody,
@@ -156,6 +159,12 @@ function AdminPage() {
             <TabsTrigger value="analytics">
               <BarChart3 className="h-4 w-4 mr-1" /> Analytics
             </TabsTrigger>
+            <TabsTrigger value="activity">
+              <Activity className="h-4 w-4 mr-1" /> User activity &amp; analytics
+            </TabsTrigger>
+            <TabsTrigger value="audit">
+              <ScrollText className="h-4 w-4 mr-1" /> Audit log
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="documents">
@@ -172,6 +181,12 @@ function AdminPage() {
           </TabsContent>
           <TabsContent value="analytics">
             <AnalyticsTab />
+          </TabsContent>
+          <TabsContent value="activity">
+            <ActivityAnalyticsTab />
+          </TabsContent>
+          <TabsContent value="audit">
+            <AuditLogTab />
           </TabsContent>
         </Tabs>
       </main>
