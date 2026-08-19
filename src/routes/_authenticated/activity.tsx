@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
+  Clock,
   Activity as ActivityIcon,
   Loader2,
   ShieldCheck,
@@ -21,6 +22,9 @@ import {
 } from "@/lib/profile.functions";
 import { listMyActivity, deleteMyActivity } from "@/lib/activity.functions";
 import { EVENT_LABELS } from "@/components/activity/event-labels";
+import { summarize, type EventRow } from "@/lib/activity-metrics";
+import { getSessionId, getSessionStart } from "@/lib/activity";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/activity")({
   head: () => ({
@@ -70,7 +74,23 @@ function MyActivity() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["favorites"] }),
   });
 
-  const s = activity.data?.summary;
+  const [sessionId, setSessionId] = useState<string>("");
+  const [sessionStart, setSessionStart] = useState<string | null>(null);
+  useEffect(() => {
+    setSessionId(getSessionId());
+    setSessionStart(getSessionStart());
+  }, []);
+
+  const events = (activity.data?.events ?? []) as EventRow[];
+  const allTime = activity.data?.summary ?? summarize([]);
+  const sessionEvents = sessionId
+    ? events.filter(
+        (e) =>
+          e.session_id === sessionId ||
+          (!e.session_id && sessionStart && e.created_at >= sessionStart),
+      )
+    : [];
+  const session = summarize(sessionEvents);
 
   return (
     <div className="min-h-screen bg-background">
@@ -103,14 +123,53 @@ function MyActivity() {
       <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
         <PrivacyNotice />
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Searches" value={s?.searches ?? 0} />
-          <Stat label="Products viewed" value={s?.products ?? 0} />
-          <Stat label="Evidence opened" value={s?.evidence ?? 0} />
-          <Stat label="Reports" value={s?.reports ?? 0} />
-          <Stat label="Saved items" value={s?.saved ?? 0} />
-          <Stat label="Exports" value={s?.exports ?? 0} />
-        </div>
+        {/* Current session */}
+        <section className="rounded-2xl border border-primary/25 bg-primary/[0.03] p-4 sm:p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">Current session</h2>
+            <span className="text-xs text-muted-foreground">
+              {sessionStart ? `since ${new Date(sessionStart).toLocaleTimeString()}` : ""}
+            </span>
+          </div>
+          {activity.isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : sessionEvents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No activity yet in this session.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <Stat label="Searches" scope="Current session" value={session.searches} />
+              <Stat label="Unique products viewed" scope="Current session" value={session.products} />
+              <Stat label="Evidence reports opened" scope="Current session" value={session.evidence} />
+              <Stat label="References opened" scope="Current session" value={session.references} />
+              <Stat label="Reports generated" scope="Current session" value={session.reports} />
+              <Stat label="Favourites / saves" scope="Current session" value={session.saved} />
+            </div>
+          )}
+        </section>
+
+        {/* All-time */}
+        <section className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <ActivityIcon className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">All-time activity</h2>
+            <span className="text-xs text-muted-foreground">retained history</span>
+          </div>
+          {activity.isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : events.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No retained activity.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <Stat label="Total searches" scope="All-time" value={allTime.searches} />
+              <Stat label="Unique products viewed" scope="All-time" value={allTime.products} />
+              <Stat label="Evidence reports opened" scope="All-time" value={allTime.evidence} />
+              <Stat label="References opened" scope="All-time" value={allTime.references} />
+              <Stat label="Reports generated" scope="All-time" value={allTime.reports} />
+              <Stat label="Favourites / saves" scope="All-time" value={allTime.saved} />
+            </div>
+          )}
+        </section>
 
         {/* Search history */}
         <Card className="p-4 sm:p-5">
@@ -217,7 +276,7 @@ function MyActivity() {
             <h2 className="flex items-center gap-2 text-sm font-semibold">
               <ActivityIcon className="h-4 w-4 text-primary" /> Recent activity
             </h2>
-            {!!activity.data?.events.length && (
+            {!!events.length && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -230,11 +289,11 @@ function MyActivity() {
           </div>
           {activity.isLoading ? (
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          ) : !activity.data?.events.length ? (
+          ) : !events.length ? (
             <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
           ) : (
             <ul className="divide-y divide-border/70">
-              {activity.data.events.map((e: any) => (
+              {events.map((e: any) => (
                 <li key={e.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
                   <Badge variant="outline" className="rounded-full text-[10px] capitalize">
                     {e.category}
@@ -280,11 +339,20 @@ function MyActivity() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number | string }) {
+function Stat({
+  label,
+  value,
+  scope,
+}: {
+  label: string;
+  value: number | string;
+  scope?: string;
+}) {
   return (
     <Card className="p-4">
       <p className="text-2xl font-semibold">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-xs font-medium text-foreground/80">{label}</p>
+      {scope && <p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{scope}</p>}
     </Card>
   );
 }
