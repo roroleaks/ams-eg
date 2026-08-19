@@ -55,3 +55,11 @@ export const AuditFilter = z.object({
 export type AuditFilterType = z.infer<typeof AuditFilter>;
 
 export const RETENTION_OPTIONS = [30, 90, 180, 365] as const;
+
+/**
+ * Legacy/internal lifecycle events that must never appear as separate visible
+ * user activity. One completed search is a single `search_performed` event;
+ * `search_completed` and bulk `product_result_viewed` rows recorded by earlier
+ * versions are internal metadata only.
+ */
+export const HIDDEN_EVENT_TYPES: string[] = ["search_completed", "product_result_viewed"];

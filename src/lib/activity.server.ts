@@ -74,3 +74,38 @@ export function dailySeries(rows: EventRow[], days: number) {
   }
   return [...buckets.values()];
 }
+
+/**
+ * Single source of truth for activity metrics. Summary cards and the detailed
+ * feed must always be derived from this function so the numbers reconcile.
+ *  - one completed search  = one `search_performed` event
+ *  - one product view      = one unique product opened (per scope)
+ *  - one report generated  = one `report_generated` event
+ */
+export function summarize(rows: EventRow[]) {
+  const products = new Set<string>();
+  for (const r of rows) {
+    if (r.event_type === "product_details_opened" && r.product_id) products.add(r.product_id);
+  }
+  const count = (...types: string[]) => rows.filter((r) => types.includes(r.event_type)).length;
+  return {
+    searches: count("search_performed"),
+    noResult: count("search_no_result"),
+    products: products.size,
+    evidence: count("evidence_report_opened"),
+    references: count("reference_opened", "monograph_opened"),
+    reports: count("report_generated"),
+    saved: count("product_saved", "search_saved", "report_saved", "product_favorited"),
+    exports: count("report_exported"),
+  };
+}
+
+/** Unique (scope, product) pairs — used for the admin "products viewed" metric. */
+export function uniqueProductViews(rows: EventRow[]): number {
+  const set = new Set<string>();
+  for (const r of rows) {
+    if (r.event_type !== "product_details_opened" || !r.product_id) continue;
+    set.add(`${r.user_id ?? r.session_id ?? "anon"}|${r.product_id}`);
+  }
+  return set.size;
+}
