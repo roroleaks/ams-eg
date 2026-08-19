@@ -1,4 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { EventRow } from "@/lib/activity-metrics";
+
+export { summarize, uniqueProductViews, type EventRow } from "@/lib/activity-metrics";
 
 /** Small TTL cache so role lookups never add latency to the clinical flow. */
 const roleCache = new Map<string, { role: string; expires: number }>();
@@ -22,22 +25,6 @@ export async function roleFor(supabase: SupabaseClient<any>, userId: string): Pr
   }
   roleCache.set(userId, { role, expires: Date.now() + 5 * 60 * 1000 });
   return role;
-}
-
-export interface EventRow {
-  id: string;
-  user_id: string | null;
-  user_role: string | null;
-  organization: string | null;
-  session_id: string | null;
-  category: string;
-  event_type: string;
-  complaint_id: string | null;
-  product_id: string | null;
-  report_id: string | null;
-  reference_id: string | null;
-  result_count: number | null;
-  created_at: string;
 }
 
 export function countBy(rows: EventRow[], key: keyof EventRow, limit = 10) {
@@ -74,3 +61,4 @@ export function dailySeries(rows: EventRow[], days: number) {
   }
   return [...buckets.values()];
 }
+

@@ -2,7 +2,15 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getOptionalCaller, publicClient } from "@/lib/ai-guard.server";
-import { roleFor, countBy, since, dailySeries, type EventRow } from "@/lib/activity.server";
+import {
+  roleFor,
+  countBy,
+  since,
+  dailySeries,
+  summarize,
+  uniqueProductViews,
+  type EventRow,
+} from "@/lib/activity.server";
 import { scrubIdentifier } from "@/lib/activity-privacy";
 import {
   EventInput,
@@ -10,6 +18,7 @@ import {
   CATEGORY_OF,
   IMMUTABLE_CATEGORIES,
   RETENTION_OPTIONS,
+  HIDDEN_EVENT_TYPES,
 } from "@/lib/activity.schemas";
 
 const SELECT =
@@ -68,22 +77,16 @@ export const listMyActivity = createServerFn({ method: "GET" })
       .select(SELECT)
       .eq("user_id", context.userId)
       .order("created_at", { ascending: false })
-      .limit(300);
+      .limit(2000);
     if (error) throw new Error(error.message);
-    const rows = (data ?? []) as EventRow[];
-    const count = (cat: string) => rows.filter((r) => r.category === cat).length;
-    return {
-      events: rows,
-      summary: {
-        searches: rows.filter((r) => r.event_type === "search_performed").length,
-        products: count("product"),
-        evidence: count("evidence"),
-        reports: count("report"),
-        saved: count("saved"),
-        exports: rows.filter((r) => r.event_type === "report_exported").length,
-      },
-    };
+    // Internal lifecycle rows stay out of the visible model entirely, so the
+    // feed and the summary cards always reconcile.
+    const rows = ((data ?? []) as EventRow[]).filter(
+      (r) => !HIDDEN_EVENT_TYPES.includes(r.event_type),
+    );
+    return { events: rows, summary: summarize(rows) };
   });
+
 
 export const deleteMyActivity = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -140,7 +143,7 @@ export const activityDashboard = createServerFn({ method: "GET" })
         searchesWeek: rows.filter((r) => isSearch(r) && r.created_at >= weekAgo).length,
         searchesMonth: rows.filter((r) => isSearch(r) && r.created_at >= monthAgo).length,
         reports: rows.filter((r) => r.event_type === "report_generated").length,
-        productsViewed: rows.filter((r) => r.event_type === "product_details_opened").length,
+        productsViewed: uniqueProductViews(rows),
         evidenceOpened: rows.filter((r) => r.event_type === "evidence_report_opened").length,
         favorites: rows.filter((r) => r.event_type === "product_favorited").length,
         exports: rows.filter((r) => r.event_type === "report_exported").length,
@@ -235,7 +238,7 @@ export const userActivityProfile = createServerFn({ method: "POST" })
       stats: {
         searches: rows.filter((r) => r.event_type === "search_performed").length,
         reports: rows.filter((r) => r.event_type === "report_generated").length,
-        productsViewed: rows.filter((r) => r.event_type === "product_details_opened").length,
+        productsViewed: uniqueProductViews(rows),
         favorites: favorites ?? 0,
       },
       recent: rows.slice(0, 30),
