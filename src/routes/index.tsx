@@ -173,7 +173,10 @@ function Index() {
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
         apply((s?.user as any) ?? null);
-        if (event === "SIGNED_IN") track({ event_type: "user_signed_in" });
+        if (event === "SIGNED_IN") {
+          startNewSession();
+          track({ event_type: "user_signed_in" });
+        }
         if (event === "SIGNED_OUT") track({ event_type: "user_signed_out" });
       }
     });
@@ -268,11 +271,6 @@ function Index() {
       track({ event_type: "search_performed", complaint_id: complaint, result_count: matches.length });
       if (matches.length === 0) {
         track({ event_type: "search_no_result", complaint_id: complaint, result_count: 0 });
-      } else {
-        track({ event_type: "search_completed", complaint_id: complaint, result_count: matches.length });
-        matches.slice(0, 5).forEach((m) =>
-          track({ event_type: "product_result_viewed", complaint_id: complaint, product_id: m.product }),
-        );
       }
       if (session) {
         saveHistoryFn({
@@ -368,9 +366,6 @@ function Index() {
         report_id: historyIdRef.current,
         result_count: matches.length,
       });
-      matches.slice(0, 5).forEach((m) =>
-        track({ event_type: "report_opened", product_id: m.product, report_id: historyIdRef.current }),
-      );
       if (session && historyIdRef.current) {
         attachReportFn({
           data: { id: historyIdRef.current, report_markdown: markdown.slice(0, 60000) },
@@ -1314,7 +1309,6 @@ function ProductCard({
             onClick={() => {
               if (!open) {
                 track({ event_type: "product_details_opened", product_id: match.product });
-                track({ event_type: "evidence_report_opened", product_id: match.product });
               }
               setOpen((o) => !o);
             }}
