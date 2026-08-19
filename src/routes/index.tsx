@@ -44,7 +44,7 @@ import {
 } from "@/lib/profile.functions";
 import { WelcomeBanner } from "@/components/WelcomeBanner";
 import { getAnonId } from "@/lib/guest";
-import { track } from "@/lib/activity";
+import { track, startNewSession } from "@/lib/activity";
 import { normalizeComplaint } from "@/lib/activity-privacy";
 import { isAdmin as isAdminFn } from "@/lib/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -1333,6 +1333,13 @@ function ProductCard({
                       }
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() =>
+                        track({
+                          event_type: "evidence_report_opened",
+                          product_id: match.product,
+                          reference_id: `${p.sourceName ?? "source"}${p.page != null ? `#${p.page}` : ""}`,
+                        })
+                      }
                       className="mt-2.5 inline-flex flex-wrap items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-primary transition-colors hover:border-primary/40 hover:bg-primary/5"
                     >
                       <BookOpen className="h-3 w-3" />
