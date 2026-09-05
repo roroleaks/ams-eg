@@ -329,6 +329,8 @@ function MyActivity() {
             </ul>
           )}
           <p className="mt-3 text-xs text-muted-foreground">
+            Clearing your activity removes your personal searches, product views, evidence opens
+            and report records, and the all-time figures above recalculate immediately.
             Sign-in and sign-out records are kept for security and cannot be deleted here. To
             request anonymisation or deletion of your personal activity data, contact your AMS
             administrator.

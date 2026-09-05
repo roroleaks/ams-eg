@@ -130,11 +130,11 @@ export function ActivityAnalyticsTab() {
             <Stat label="Searches today" value={d.totals.searchesToday} />
             <Stat label="Searches this week" value={d.totals.searchesWeek} />
             <Stat label="Searches this month" value={d.totals.searchesMonth} />
-            <Stat label="Reports generated" value={d.totals.reports} />
-            <Stat label="Products viewed" value={d.totals.productsViewed} />
-            <Stat label="Evidence opened" value={d.totals.evidenceOpened} />
-            <Stat label="Favourites" value={d.totals.favorites} />
-            <Stat label="Exports" value={d.totals.exports} />
+            <Stat label="Reports generated (selected range)" value={d.totals.reports} />
+            <Stat label="Unique products viewed (selected range)" value={d.totals.productsViewed} />
+            <Stat label="Evidence opened (selected range)" value={d.totals.evidenceOpened} />
+            <Stat label="Favourites (selected range)" value={d.totals.favorites} />
+            <Stat label="Exports (selected range)" value={d.totals.exports} />
           </div>
 
           <Card className="p-4">
@@ -233,7 +233,7 @@ export function ActivityAnalyticsTab() {
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <Stat label="Searches" value={profile.data.stats.searches} />
                   <Stat label="Reports" value={profile.data.stats.reports} />
-                  <Stat label="Products viewed" value={profile.data.stats.productsViewed} />
+                  <Stat label="Unique products viewed" value={profile.data.stats.productsViewed} />
                   <Stat label="Favourites" value={profile.data.stats.favorites} />
                 </div>
                 <ul className="max-h-64 divide-y divide-border/70 overflow-auto text-sm">
