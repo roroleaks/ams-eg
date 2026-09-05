@@ -54,7 +54,7 @@ beforeEach(() => {
 
 describe("activity metrics — 17 checks", () => {
   it("1. single PCOS search records exactly one visible search event", () => {
-    track({ category: "search", event_type: "search_performed", complaint_raw: "PCOS", result_count: 4 });
+    track({ event_type: "search_performed", complaint_raw: "PCOS", result_count: 4 });
     expect(sent.length).toBe(1); // 1
     expect(sent[0].event_type).toBe("search_performed"); // 2
     expect(summarize(asRows()).searches).toBe(1); // 3
@@ -62,15 +62,15 @@ describe("activity metrics — 17 checks", () => {
 
   it("2. product refresh / re-open counts one unique product view", () => {
     for (let i = 0; i < 5; i++)
-      track({ category: "product", event_type: "product_details_opened", product_id: "FibroMed" });
+      track({ event_type: "product_details_opened", product_id: "FibroMed" });
     expect(sent.length).toBe(1); // 4
     expect(summarize(asRows()).products).toBe(1); // 5
     expect(uniqueProductViews(asRows())).toBe(1); // 6
   });
 
   it("3. a second, different search adds exactly one more search", () => {
-    track({ category: "search", event_type: "search_performed", complaint_raw: "PCOS" });
-    track({ category: "search", event_type: "search_performed", complaint_raw: "male infertility" });
+    track({ event_type: "search_performed", complaint_raw: "PCOS" });
+    track({ event_type: "search_performed", complaint_raw: "male infertility" });
     expect(summarize(asRows()).searches).toBe(2); // 7
     const distinct = new Set(sent.map((s) => s.complaint_id));
     expect(distinct.size).toBe(2); // 8
@@ -78,10 +78,10 @@ describe("activity metrics — 17 checks", () => {
   });
 
   it("4. report generation counts once; opens and exports stay separate", () => {
-    track({ category: "report", event_type: "report_generated", report_id: "r1" });
-    track({ category: "report", event_type: "report_opened", report_id: "r1" });
-    track({ category: "report", event_type: "report_opened", report_id: "r1" });
-    track({ category: "report", event_type: "report_exported", report_id: "r1" });
+    track({ event_type: "report_generated", report_id: "r1" });
+    track({ event_type: "report_opened", report_id: "r1" });
+    track({ event_type: "report_opened", report_id: "r1" });
+    track({ event_type: "report_exported", report_id: "r1" });
     const s = summarize(asRows());
     expect(s.reports).toBe(1); // 10
     expect(s.exports).toBe(1); // 11
@@ -89,8 +89,8 @@ describe("activity metrics — 17 checks", () => {
   });
 
   it("5. deleting history rows recalculates metrics immediately", () => {
-    track({ category: "search", event_type: "search_performed", complaint_raw: "PCOS" });
-    track({ category: "product", event_type: "product_details_opened", product_id: "Q-Well" });
+    track({ event_type: "search_performed", complaint_raw: "PCOS" });
+    track({ event_type: "product_details_opened", product_id: "Q-Well" });
     const rows = asRows();
     expect(summarize(rows).searches).toBe(1); // 13
     const afterDelete = rows.filter((r) => r.event_type !== "search_performed");
@@ -99,12 +99,12 @@ describe("activity metrics — 17 checks", () => {
   });
 
   it("6. a new session resets scoped counts and issues a fresh session id", () => {
-    track({ category: "product", event_type: "product_details_opened", product_id: "FibroMed" });
+    track({ event_type: "product_details_opened", product_id: "FibroMed" });
     const oldRows = asRows();
     const oldId = getSessionId();
     const newId = startNewSession();
     expect(newId).not.toBe(oldId); // 16
-    track({ category: "product", event_type: "product_details_opened", product_id: "FibroMed" });
+    track({ event_type: "product_details_opened", product_id: "FibroMed" });
     const sessionRows = asRows().filter((r) => r.session_id === newId);
     expect(sessionRows.length).toBe(1); // 17 — dedupe cleared, session scoped
     expect(oldRows.length).toBe(1);
