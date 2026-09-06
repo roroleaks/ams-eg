@@ -150,7 +150,10 @@ ${haveL
 
 ## Useful Links
 ${haveL
-  ? `For each cited study, one line beginning with the study's short title followed by clickable Markdown links, using ONLY the links supplied in the LINKS field for that study (labels: PubMed, PMC, Publisher, CrossRef). Convert nothing yourself and invent no URLs. Omit studies with no links. This is the ONLY section allowed to contain URLs.`
+  ? `Present as a Markdown bullet list. Each bullet on its own line begins with the study's short title, followed by clickable Markdown links using ONLY the links supplied in the LINKS field for that study (labels: PubMed, PMC, Publisher, CrossRef). Convert nothing yourself and invent no URLs. Omit studies with no links. This is the ONLY section allowed to contain URLs.
+
+Example:
+- Short title: [PubMed](url) · [PMC](url) · [Publisher](url)`
   : `*No external links available.*`}
 
 ---
