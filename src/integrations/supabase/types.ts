@@ -89,6 +89,57 @@ export type Database = {
         }
         Relationships: []
       }
+      complaint_library: {
+        Row: {
+          built_at: string
+          built_by: string | null
+          complaint: string
+          created_at: string
+          error: string | null
+          evidence: Json
+          evidence_count: number
+          id: string
+          literature: Json
+          literature_count: number
+          product_count: number
+          products: Json
+          report_markdown: string | null
+          status: string
+        }
+        Insert: {
+          built_at?: string
+          built_by?: string | null
+          complaint: string
+          created_at?: string
+          error?: string | null
+          evidence?: Json
+          evidence_count?: number
+          id?: string
+          literature?: Json
+          literature_count?: number
+          product_count?: number
+          products?: Json
+          report_markdown?: string | null
+          status?: string
+        }
+        Update: {
+          built_at?: string
+          built_by?: string | null
+          complaint?: string
+          created_at?: string
+          error?: string | null
+          evidence?: Json
+          evidence_count?: number
+          id?: string
+          literature?: Json
+          literature_count?: number
+          product_count?: number
+          products?: Json
+          report_markdown?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       document_chunks: {
         Row: {
           chunk_index: number
