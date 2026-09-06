@@ -154,7 +154,10 @@ ${haveL ? `Numbered Vancouver-style entries without DOI or URL:\n\n1. Authors. T
 
 ## Useful Links
 ${haveL
-  ? `One line per cited study: the short title followed by clickable Markdown links using ONLY the links supplied in that study's LINKS field (labels: PubMed, PMC, Publisher, CrossRef, OpenAlex). Invent no URLs. This is the ONLY section allowed to contain URLs.`
+  ? `Present as a Markdown bullet list. Each bullet on its own line begins with the study's short title, followed by clickable Markdown links using ONLY the links supplied in that study's LINKS field (labels: PubMed, PMC, Publisher, CrossRef, OpenAlex). Invent no URLs. This is the ONLY section allowed to contain URLs.
+
+Example:
+- Short title: [PubMed](url) · [PMC](url) · [Publisher](url)`
   : `*No external links available.*`}
 
 ---
