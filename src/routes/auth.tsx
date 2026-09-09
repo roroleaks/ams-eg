@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SignInPanel } from "@/components/sign-in-panel";
+import { useAuth } from "@/lib/auth-context";
 import { endTrackedSession } from "@/lib/session";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
@@ -33,46 +34,26 @@ function hasStoredAuthToken(): boolean {
 function AuthPage() {
   const { next } = Route.useSearch();
   const dest = safeNext(next || "/");
-  const [checking, setChecking] = useState(true);
-  const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
+  const { status, user } = useAuth();
+  const checking = status === "loading";
+  const signedInEmail = user?.email ?? null;
   const [expired, setExpired] = useState(false);
   const [confirmAction, setConfirmAction] = useState<null | "switch" | "signout">(null);
   const [tab, setTab] = useState<"signin" | "create">("signin");
 
-  // Restore an existing session first — never flash the sign-in form when a
-  // saved session exists. Skipped when a callback is present (panel handles).
+  // A leftover stored token that no longer validates means the session
+  // expired. Detect it once the provider has finished restoring.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const hasCode = params.get("code");
-    const hasTokenHash = params.get("token_hash");
-    const hasOauthError = params.get("error");
-    if (window.location.hash.length > 0 || hasCode || hasTokenHash || hasOauthError) {
-      setChecking(false);
-      setSignedInEmail(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      await supabase.auth.getSession();
-      const hadToken = hasStoredAuthToken();
-      const { data } = await supabase.auth.getUser();
-      if (!cancelled) {
-        setSignedInEmail(data.user?.email ?? null);
-        // A stored session that no longer validates means it expired.
-        setExpired(!data.user && hadToken);
-        setChecking(false);
-      }
-    })().catch(() => {
-      if (!cancelled) {
-        setSignedInEmail(null);
-        setExpired(hasStoredAuthToken());
-        setChecking(false);
-      }
-    });
+    if (status !== "unauthenticated") return;
+    let mounted = true;
+    const t = window.setTimeout(() => {
+      if (mounted) setExpired(hasStoredAuthToken());
+    }, 50);
     return () => {
-      cancelled = true;
+      mounted = false;
+      window.clearTimeout(t);
     };
-  }, []);
+  }, [status]);
 
   if (checking) {
     return (

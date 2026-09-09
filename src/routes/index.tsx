@@ -48,7 +48,7 @@ import { isAdmin as isAdminFn } from "@/lib/admin.functions";
 import { completeSignOut } from "@/lib/auth-actions";
 import { useSessionTracker } from "@/lib/session";
 import { AuthGate, useAuthGate } from "@/components/auth-gate";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
 import { getProductImage } from "@/data/product-images";
 
 const COMPLAINTS: string[] = [
@@ -135,13 +135,16 @@ function Index() {
   const [literature, setLiterature] = useState<LiteratureItem[]>([]);
   const [litLoading, setLitLoading] = useState(false);
   const [useLiterature, setUseLiterature] = useState(true);
-  const [session, setSession] = useState<{
-    email?: string;
-    name?: string;
-    avatar?: string;
-  } | null>(null);
+  const { status, user, signInCount, signOutCount } = useAuth();
+  const authLoading = status === "loading";
+  const session = useMemo(
+    () => (user ? { email: user.email ?? undefined, name: user.name, avatar: user.avatar } : null),
+    [user],
+  );
   const [isAdmin, setIsAdmin] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
+  const userIdRef = useRef<string | null>(null);
+  const lastSignInCountRef = useRef(0);
+  const lastSignOutCountRef = useRef(0);
   const seqRef = useRef(0);
   const lastLoggedRef = useRef<string>("");
   const { openGate, closeGate, resumePending, pending } = useAuthGate();
@@ -166,20 +169,13 @@ function Index() {
     openGate({ label: q.trim(), next: authNext(q), run: () => setQuery(q) });
   }
 
+  // Per-user side effects: admin check, profile upsert, favorites. Runs once
+  // per signed-in user; resets when signed out. The auth provider owns the
+  // actual session state.
   useEffect(() => {
-    const apply = (user: { email?: string | null; user_metadata?: Record<string, any> } | null) => {
-      if (!user) {
-        setSession(null);
-        setIsAdmin(false);
-        setFavorites(new Set());
-        return;
-      }
-      const meta = user.user_metadata ?? {};
-      setSession({
-        email: user.email ?? undefined,
-        name: meta.full_name ?? meta.name,
-        avatar: meta.avatar_url ?? meta.picture,
-      });
+    if (status === "authenticated" && user) {
+      if (userIdRef.current === user.id) return;
+      userIdRef.current = user.id;
       isAdminServer().then((r) => setIsAdmin(r.isAdmin)).catch(() => setIsAdmin(false));
       touchProfileFn().catch(() => {});
       listFavoritesFn()
@@ -187,39 +183,29 @@ function Index() {
           setFavorites(new Set(f.map((x: any) => `${x.item_type}:${x.item_key}`))),
         )
         .catch(() => {});
-    };
-    (async () => {
-      await supabase.auth.getSession();
-      const { data } = await supabase.auth.getUser();
-      if (data.user) apply(data.user as any);
-      else apply(null);
-      setAuthLoading(false);
-    })();
-    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
-      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
-        apply((s?.user as any) ?? null);
-        if (event === "SIGNED_IN") {
-          startNewSession();
-          track({ event_type: "user_signed_in" });
-        }
-        if (event === "SIGNED_OUT") track({ event_type: "user_signed_out" });
-      }
-    });
-    // Sync when the session changes in another tab (e.g. magic link opened in
-    // a new tab, or sign-out performed elsewhere).
-    const onStorage = (e: StorageEvent) => {
-      if (e.key && e.key.startsWith("sb-") && e.key.endsWith("-auth-token")) {
-        void supabase.auth.getSession().then(({ data: { session } }) => {
-          apply((session?.user as any) ?? null);
-        });
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => {
-      sub.subscription.unsubscribe();
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [isAdminServer, touchProfileFn, listFavoritesFn]);
+    } else {
+      userIdRef.current = null;
+      setIsAdmin(false);
+      setFavorites(new Set());
+    }
+  }, [status, user, isAdminServer, touchProfileFn, listFavoritesFn]);
+
+  // Analytics fire only on real sign-in/sign-out events, never on restores or
+  // page refreshes (the provider exposes event counters, not restore state).
+  useEffect(() => {
+    if (signInCount > lastSignInCountRef.current && user) {
+      lastSignInCountRef.current = signInCount;
+      startNewSession();
+      track({ event_type: "user_signed_in" });
+    }
+  }, [signInCount, user]);
+
+  useEffect(() => {
+    if (signOutCount > lastSignOutCountRef.current) {
+      lastSignOutCountRef.current = signOutCount;
+      track({ event_type: "user_signed_out" });
+    }
+  }, [signOutCount]);
 
   useSessionTracker(!!session);
 
