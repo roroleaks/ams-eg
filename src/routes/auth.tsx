@@ -34,13 +34,24 @@ function hasStoredAuthToken(): boolean {
 function AuthPage() {
   const { next } = Route.useSearch();
   const dest = safeNext(next || "/");
-  const { status, user, signOut, signingOut } = useAuth();
+  const { status, user, signOut, signingOut, restoreFailed, retryRestore } = useAuth();
   const checking = status === "loading";
   const signedInEmail = user?.email ?? null;
   const [expired, setExpired] = useState(false);
   const [localCleared, setLocalCleared] = useState(false);
   const [confirmAction, setConfirmAction] = useState<null | "switch" | "signout">(null);
   const [tab, setTab] = useState<"signin" | "create">("signin");
+
+  // Magic-link / Google OAuth return to /auth with the session delivered as URL
+  // fragment parameters. Once the provider reports authenticated, complete the
+  // redirect exactly once — without a second auth listener or further requests.
+  useEffect(() => {
+    if (status !== "authenticated" || !user) return;
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    if (/[#&](access_token|id_token|error)=/.test(hash)) {
+      window.location.href = dest;
+    }
+  }, [status, user, dest]);
 
   // A one-shot notice when a sign-out could only clear the device locally (the
   // provider was unreachable). It never claims the server session was ended.
@@ -67,7 +78,7 @@ function AuthPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="sr-only">Restoring your session…</span>
+        <span className="sr-only">Checking your sign-in status…</span>
       </div>
     );
   }
@@ -147,6 +158,20 @@ function AuthPage() {
           <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
             Your local session was cleared. Please reload if the app still appears signed in.
           </p>
+        )}
+        {restoreFailed && (
+          <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
+            <p>We could not restore your session. Please try again.</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={() => retryRestore()}
+            >
+              Retry
+            </Button>
+          </div>
         )}
         {expired && (
           <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">

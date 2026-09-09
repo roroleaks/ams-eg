@@ -5,7 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Loader2, Mail } from "lucide-react";
-import { delay, SIGN_OUT_TIMEOUT_MS } from "@/lib/sign-out";
+import {
+  AUTH_RESTORE_TIMEOUT_MS,
+  CALLBACK_TIMEOUT_MS,
+  delay,
+  raceWithTimeout,
+  SIGN_OUT_TIMEOUT_MS,
+} from "@/lib/sign-out";
 
 const RESEND_COOLDOWN_S = 60;
 
@@ -93,8 +99,16 @@ export function SignInPanel({
   async function ensureActiveAccount(): Promise<boolean> {
     let user: { id: string; email?: string | null } | null = null;
     try {
-      const { data } = await supabase.auth.getUser();
-      user = data.user;
+      const res = await raceWithTimeout(
+        supabase.auth.getUser(),
+        AUTH_RESTORE_TIMEOUT_MS,
+        "TIMEOUT" as const,
+      );
+      if (res === "TIMEOUT") {
+        setError("We couldn't verify your account. Check your connection and try again.");
+        return false;
+      }
+      user = res.data.user;
     } catch {
       setError("We couldn't verify your account. Check your connection and try again.");
       return false;
@@ -103,18 +117,26 @@ export function SignInPanel({
       setError("Your session could not be verified. Please request a new sign-in link and try again.");
       return false;
     }
-    const { data: profile } = await supabase
+    const profileQuery = supabase
       .from("profiles")
       .select("status")
       .eq("id", user.id)
       .maybeSingle();
-    if (profile && profile.status !== "active") {
-      void Promise.race([
-        supabase.auth.signOut().catch(() => {}),
-        delay(SIGN_OUT_TIMEOUT_MS),
-      ]);
-      setError("Your account is currently suspended. Contact your administrator for access.");
-      return false;
+    const profileRes = await raceWithTimeout(
+      Promise.resolve(profileQuery),
+      AUTH_RESTORE_TIMEOUT_MS,
+      "TIMEOUT" as const,
+    );
+    if (profileRes !== "TIMEOUT") {
+      const profile = profileRes.data;
+      if (profile && profile.status !== "active") {
+        void Promise.race([
+          supabase.auth.signOut().catch(() => {}),
+          delay(SIGN_OUT_TIMEOUT_MS),
+        ]);
+        setError("Your account is currently suspended. Contact your administrator for access.");
+        return false;
+      }
     }
     if (user.email) {
       try {
@@ -139,7 +161,7 @@ export function SignInPanel({
     if (!onSuccess) window.location.href = safeNext(next);
   }
 
-  /** Handles magic-link / OAuth exchange parameters appended to the URL. */
+  /** Handles a `?code=` exchange parameter appended to the URL (bounded). */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -154,39 +176,31 @@ export function SignInPanel({
       }
       if (code) {
         setLoading(true);
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        const res = await raceWithTimeout(
+          supabase.auth.exchangeCodeForSession(code),
+          CALLBACK_TIMEOUT_MS,
+          "TIMEOUT" as const,
+        );
         if (!cancelled) {
-          if (error) {
-            setError(error.message || "This sign-in link is invalid or has expired. Please try again.");
+          if (res === "TIMEOUT") {
+            setError("This sign-in link could not be completed. Check your connection and try again.");
+            setLoading(false);
+          } else if (res.error) {
+            setError(res.error.message || "This sign-in link is invalid or has expired. Please try again.");
             setLoading(false);
           } else {
             await finishAuthentication();
           }
         }
-      } else {
-        // Magic-link / OAuth redirects deliver the session as URL fragment
-        // parameters (e.g. #access_token=...&refresh_token=...). We must NOT
-        // clean the URL before this recovery runs, or sign-in fails silently.
-        const { data } = await supabase.auth.getSession();
-        if (!cancelled && data.session) await finishAuthentication();
       }
+      // Fragment-delivered sessions (access_token / id_token) are completed by
+      // the centralized provider + /auth page — never re-handled here.
     })().catch((error) => {
       if (!cancelled) setError(friendlyAuthError(error));
     });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /** Complete auth whenever Supabase reports a signed-in user (async recovery). */
-  useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user && !completedRef.current) {
-        void finishAuthentication().catch((error) => setError(friendlyAuthError(error)));
-      }
-    });
-    return () => sub.subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

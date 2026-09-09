@@ -209,7 +209,7 @@ function Index() {
     }
   }, [signOutCount]);
 
-  useSessionTracker(!!session);
+  useSessionTracker(!!session && !signingOut);
 
   // Preload embedding matrices in the background. Never blocks first paint or
   // keyword matching: product results render instantly; semantic scoring

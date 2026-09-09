@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { touchProfile } from "@/lib/profile.functions";
+import { CALLBACK_TIMEOUT_MS, PROFILE_UPSERT_TIMEOUT_MS, raceWithTimeout } from "@/lib/sign-out";
 
 export const Route = createFileRoute("/auth/callback")({
   ssr: false,
@@ -56,14 +57,16 @@ function AuthCallback() {
 
       if (code) {
         exchangedRef.current = true;
-        try {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (!cancelled && error) setErrorMessage(error.message);
-        } catch (err) {
-          if (!cancelled) {
-            setErrorMessage(
-              err instanceof Error ? err.message : "Sign-in could not be completed. Please try again.",
-            );
+        const res = await raceWithTimeout(
+          supabase.auth.exchangeCodeForSession(code),
+          CALLBACK_TIMEOUT_MS,
+          "TIMEOUT" as const,
+        );
+        if (!cancelled) {
+          if (res === "TIMEOUT") {
+            setErrorMessage("Sign-in could not be completed. Check your connection and try again.");
+          } else if (res.error) {
+            setErrorMessage(res.error.message);
           }
         }
       }
@@ -80,8 +83,13 @@ function AuthCallback() {
     if (errorMessage || finalizedRef.current) return;
     if (status !== "authenticated") return;
     finalizedRef.current = true;
-    touchProfileFn()
-      .catch(() => undefined) // never block sign-in on profile housekeeping
+    // Bounded, background profile housekeeping: never delays the redirect.
+    void raceWithTimeout(
+      touchProfileFn(),
+      PROFILE_UPSERT_TIMEOUT_MS,
+      null,
+    )
+      .catch(() => undefined)
       .finally(() => {
         window.location.href = dest;
       });

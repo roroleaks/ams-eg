@@ -6,9 +6,29 @@ import { sessionKey, clearSessionKey } from "@/lib/session";
 export const SIGN_OUT_TIMEOUT_MS = 5000;
 /** Hard cap for background (optional) session-record cleanup. */
 export const CLEANUP_TIMEOUT_MS = 1500;
+/** Hard cap for the initial session-restoration calls. */
+export const AUTH_RESTORE_TIMEOUT_MS = 5000;
+/** Hard cap for the magic-link / OAuth code exchange. */
+export const CALLBACK_TIMEOUT_MS = 10000;
+/** Hard cap for the profile upsert after a successful sign-in. */
+export const PROFILE_UPSERT_TIMEOUT_MS = 5000;
+/** Hard cap for optional background activity/session writes. */
+export const ACTIVITY_TIMEOUT_MS = 1500;
 
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolves with `fallback` instead of `promise` if the promise does not settle
+ * within `ms`. Used so no auth operation can ever wait indefinitely.
+ */
+export async function raceWithTimeout<T, F>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: F,
+): Promise<T | F> {
+  return Promise.race([promise, delay(ms).then(() => fallback)]);
 }
 
 /**

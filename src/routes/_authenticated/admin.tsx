@@ -79,7 +79,7 @@ function AdminPage() {
   const isAdminServer = useServerFn(isAdminFn);
   const [ready, setReady] = useState(false);
   const [allowed, setAllowed] = useState(false);
-  useSessionTracker(true);
+  useSessionTracker(!signingOut);
 
   useEffect(() => {
     isAdminServer()

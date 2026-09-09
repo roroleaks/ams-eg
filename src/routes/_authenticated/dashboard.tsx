@@ -65,7 +65,7 @@ function Dashboard() {
     document.title = "My Dashboard — AMS Product Advisor";
   }, []);
 
-  useSessionTracker(true);
+  useSessionTracker(!signingOut);
 
   const p = profile.data?.profile as any;
 

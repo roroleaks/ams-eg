@@ -8,6 +8,12 @@ import {
 const STORAGE_KEY = "ams-user-session-key";
 const HEARTBEAT_MS = 45_000;
 const INACTIVITY_MS = 30 * 60 * 1000;
+const ACTIVITY_TIMEOUT_MS = 1500;
+
+/** Background, bounded session/activity write: never blocks or lingers. */
+function fireAndForget(pr: Promise<unknown>, ms: number): void {
+  void Promise.race([pr, new Promise<void>((resolve) => setTimeout(resolve, ms))]).catch(() => {});
+}
 
 function newKey(): string {
   const rnd = (Math.random() + 1).toString(36).slice(2);
@@ -81,19 +87,22 @@ export function useSessionTracker(enabled: boolean) {
     setSessionKey(key);
     startedRef.current = { key, at: Date.now() };
 
-    startUserSession({
-      data: {
-        session_key: key,
-        device_type: detectDeviceType(),
-        browser: detectBrowser(),
-        operating_system: detectOS(),
-        referrer: referrer(),
-      },
-    }).catch(() => {});
+    fireAndForget(
+      startUserSession({
+        data: {
+          session_key: key,
+          device_type: detectDeviceType(),
+          browser: detectBrowser(),
+          operating_system: detectOS(),
+          referrer: referrer(),
+        },
+      }),
+      ACTIVITY_TIMEOUT_MS,
+    );
 
     const pulse = () => {
       if (document.visibilityState !== "visible") return;
-      recordSessionHeartbeat({ data: { session_key: key } }).catch(() => {});
+      fireAndForget(recordSessionHeartbeat({ data: { session_key: key } }), ACTIVITY_TIMEOUT_MS);
     };
 
     const onVisible = () => {
@@ -104,7 +113,7 @@ export function useSessionTracker(enabled: boolean) {
     document.addEventListener("visibilitychange", onVisible);
 
     const onPageHide = () => {
-      endUserSession({ data: { session_key: key } }).catch(() => {});
+      fireAndForget(endUserSession({ data: { session_key: key } }), ACTIVITY_TIMEOUT_MS);
     };
     window.addEventListener("pagehide", onPageHide);
 

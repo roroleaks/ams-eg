@@ -7,17 +7,20 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  AUTH_RESTORE_TIMEOUT_MS,
   SIGN_OUT_TIMEOUT_MS,
   clearAuthTokens,
   delay,
   markLocalCleared,
+  raceWithTimeout,
   redirectOnce,
   scheduleSessionCleanup,
 } from "@/lib/sign-out";
 
-export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+export type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "signing_out";
 
 export interface AuthUser {
   id: string;
@@ -27,30 +30,48 @@ export interface AuthUser {
   metadata: Record<string, unknown>;
 }
 
+export interface AuthSessionInfo {
+  user_id: string;
+  email: string | null;
+  expires_at: number | null;
+}
+
 interface AuthContextValue {
   status: AuthStatus;
   user: AuthUser | null;
-  /** True while a sign-out operation is in progress (UI shows "Signing out…"). */
+  /** Lightweight snapshot of the current auth session (never raw tokens). */
+  session: AuthSessionInfo | null;
+  /** True while the sign-out operation is in progress (`status === "signing_out"`). */
   signingOut: boolean;
   /** Increments on real sign-in events, never on restores/refreshes. */
   signInCount: number;
   /** Increments on real sign-out events. */
   signOutCount: number;
+  /** True only when the initial session restore hit its bounded timeout. */
+  restoreFailed: boolean;
   /**
-   * The single shared sign-out operation. Bounded (5s provider timeout),
-   * re-entrant calls reuse the in-flight operation, optional session cleanup
-   * never blocks it, and it always redirects to `/auth?next=%2F` (or `to`).
+   * The single shared, bounded sign-out operation. Re-entrant calls reuse the
+   * in-flight operation, its cleanup never blocks it, and it always redirects
+   * to `/auth?next=%2F` (or `to`).
    */
   signOut: (to?: string) => Promise<void>;
+  /** Bounded refresh; used by recovery UI when the initial restore failed. */
+  refreshSession: () => Promise<void>;
+  /** Retries the initial session restoration. */
+  retryRestore: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   status: "loading",
   user: null,
+  session: null,
   signingOut: false,
   signInCount: 0,
   signOutCount: 0,
+  restoreFailed: false,
   signOut: () => Promise.resolve(),
+  refreshSession: () => Promise.resolve(),
+  retryRestore: () => {},
 });
 
 function toAuthUser(u: {
@@ -70,91 +91,157 @@ function toAuthUser(u: {
 }
 
 /**
- * The single, centralized auth provider. Owns the only auth-state initialization,
- * the only onAuthStateChange listener and cross-tab session sync, and exposes
- * exactly three states: loading -> authenticated | unauthenticated.
+ * The single, centralized auth provider. Owns the only auth client state, the
+ * only onAuthStateChange listener and cross-tab session sync, and exposes a
+ * deterministic state machine: loading -> authenticated | unauthenticated,
+ * with a dedicated signing_out state while sign-out runs.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [signingOut, setSigningOut] = useState(false);
+  const [session, setSession] = useState<AuthSessionInfo | null>(null);
+  const [restoreFailed, setRestoreFailed] = useState(false);
   const [signInCount, setSignInCount] = useState(0);
   const [signOutCount, setSignOutCount] = useState(0);
   const startedRef = useRef(false);
+  const cancelledRef = useRef(false);
+  const statusRef = useRef<AuthStatus>("loading");
+  const restoringRef = useRef(false);
   const signOutInFlightRef = useRef<Promise<void> | null>(null);
   const signedOutByListenerRef = useRef(false);
+  const authGenerationRef = useRef(0);
+  const restoreFnRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
 
-    let cancelled = false;
-
-    const applyUser = (u: AuthUser | null) => {
-      if (cancelled) return;
-      setUser(u);
-      setStatus(u ? "authenticated" : "unauthenticated");
+    const applySession = (s: Session) => {
+      if (cancelledRef.current) return;
+      setSession({
+        user_id: s.user.id,
+        email: s.user.email ?? null,
+        expires_at: s.expires_at ?? null,
+      });
+      setUser(toAuthUser(s.user as never));
+      setStatus("authenticated");
     };
 
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      const sessUser = session?.user
-        ? toAuthUser(session.user as {
-            id: string;
-            email?: string | null;
-            user_metadata?: Record<string, unknown>;
-          })
-        : null;
+    const clearAuthState = () => {
+      setUser(null);
+      setSession(null);
+      setStatus("unauthenticated");
+    };
+
+    // Bounded initial restoration, exactly once (re-runnable via retryRestore).
+    const restore = async () => {
+      if (restoringRef.current || cancelledRef.current) return;
+      restoringRef.current = true;
+      setRestoreFailed(false);
+      const gen = authGenerationRef.current;
+
+      // getSession reads the persisted session. With an expired stored token it
+      // triggers a provider refresh, so it MUST be bounded: on timeouts the page
+      // must never stay frozen on the loading screen.
+      const result = await raceWithTimeout(
+        supabase.auth.getSession(),
+        AUTH_RESTORE_TIMEOUT_MS,
+        null as never,
+      );
+
+      if (cancelledRef.current || gen !== authGenerationRef.current) {
+        restoringRef.current = false;
+        return;
+      }
+
+      // Provider did not answer in time: recover with an explicit retry instead
+      // of leaving the app permanently in `loading`.
+      if (result === null || result?.error) {
+        // A session may already have been applied via an INITIAL_SESSION event
+        // before the bounded call settled — never sign a restored user out.
+        if (statusRef.current !== "authenticated") {
+          setRestoreFailed(true);
+          clearAuthState();
+        }
+        restoringRef.current = false;
+        return;
+      }
+
+      const sess = result.data?.session ?? null;
+      if (sess) {
+        // A valid persisted session restores immediately; token expiry/refresh
+        // is handled by the official client without blocking this page.
+        applySession(sess);
+      } else {
+        clearAuthState();
+      }
+      restoringRef.current = false;
+    };
+    restoreFnRef.current = () => {
+      void restore();
+    };
+
+    // Exactly one auth-state listener for the whole application.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, sess) => {
       if (event === "SIGNED_IN") setSignInCount((c) => c + 1);
+      if (cancelledRef.current) return;
+      const gen = authGenerationRef.current;
+
+      // While signing out, ignore any event that could flip us back to
+      // authenticated (stale refresh / late restore from the outgoing session).
+      if (statusRef.current === "signing_out") {
+        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+          return;
+        }
+      }
+
       if (event === "SIGNED_OUT") {
+        // Only honor SIGNED_OUT for the current generation; the one emitted by
+        // our own signOut() (post-generation bump) is finalized by signOut().
+        if (gen !== authGenerationRef.current) return;
         signedOutByListenerRef.current = true;
         setSignOutCount((c) => c + 1);
+        clearAuthState();
+        return;
       }
+
       if (
         event === "SIGNED_IN" ||
-        event === "SIGNED_OUT" ||
+        event === "TOKEN_REFRESHED" ||
         event === "USER_UPDATED" ||
-        event === "INITIAL_SESSION" ||
-        event === "TOKEN_REFRESHED"
+        event === "INITIAL_SESSION"
       ) {
-        applyUser(sessUser);
+        // A stale event from a previous generation must never re-authenticate.
+        if (gen !== authGenerationRef.current) return;
+        if (sess) applySession(sess);
+        else clearAuthState();
       }
     });
 
-    (async () => {
-      await supabase.auth.getSession();
-      const { data } = await supabase.auth.getUser();
-      if (!cancelled) {
-        const u = data.user
-          ? toAuthUser(data.user as {
-              id: string;
-              email?: string | null;
-              user_metadata?: Record<string, unknown>;
-            })
-          : null;
-        setUser(u);
-        setStatus(u ? "authenticated" : "unauthenticated");
-      }
-    })();
+    void restore();
 
     const onStorage = (e: StorageEvent) => {
-      if (e.key && e.key.startsWith("sb-") && e.key.endsWith("-auth-token")) {
-        void supabase.auth.getSession().then(({ data: { session } }) => {
-          applyUser(
-            session?.user
-              ? toAuthUser(session.user as {
-                  id: string;
-                  email?: string | null;
-                  user_metadata?: Record<string, unknown>;
-                })
-              : null,
-          );
-        });
-      }
+      if (!e.key || !e.key.startsWith("sb-")) return;
+      const gen = authGenerationRef.current;
+      void raceWithTimeout(
+        supabase.auth.getSession().then(({ data }) => data.session),
+        AUTH_RESTORE_TIMEOUT_MS,
+        null as never,
+      ).then((sess) => {
+        if (gen !== authGenerationRef.current) return;
+        if (statusRef.current === "signing_out") return;
+        if (sess) applySession(sess);
+        else clearAuthState();
+      });
     };
     window.addEventListener("storage", onStorage);
 
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       sub.subscription.unsubscribe();
       window.removeEventListener("storage", onStorage);
     };
@@ -162,51 +249,92 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * The single shared sign-out operation. All Sign out buttons call this through
-   * the provider so the header and the auth page can never run two independent
-   * logout flows, and repeated clicks reuse the same in-flight operation.
+   * the provider, repeated clicks reuse the in-flight operation, and nothing
+   * outside the official provider call (bounded) is ever awaited.
    */
   const signOut = useCallback((to = "/auth?next=%2F"): Promise<void> => {
     if (signOutInFlightRef.current) return signOutInFlightRef.current;
 
-    const run = (async () => {
-      setSigningOut(true);
+    // Bump the generation so any in-flight restore/storage result from before
+    // sign-out can never re-authenticate this session.
+    authGenerationRef.current += 1;
+    signOutInFlightRef.current = (async () => {
+      setStatus("signing_out");
       signedOutByListenerRef.current = false;
 
       // Optional session-record cleanup: bounded and in the background. It can
       // never delay ending the authentication session.
       scheduleSessionCleanup();
 
-      const race = Promise.race([
-        supabase.auth.signOut().then(() => "ok" as const).catch(() => "ok" as const),
-        delay(SIGN_OUT_TIMEOUT_MS).then(() => "timeout" as const),
-      ]);
       try {
-        const outcome = await race;
+        const outcome = await Promise.race([
+          supabase.auth.signOut().then(() => "ok").catch(() => "ok"),
+          delay(SIGN_OUT_TIMEOUT_MS).then(() => "timeout" as const),
+        ]);
         if (outcome === "timeout") {
           // Provider did not answer in time: end the session on this device
-          // locally so the app never stays in a signed-in state, and flag the
-          // /auth page to show a safe "local session only" notice.
+          // locally so the app never stays in a signed-in state, and flag /auth
+          // to show a safe "local session only" notice.
           clearAuthTokens();
           markLocalCleared();
         }
       } finally {
         if (!signedOutByListenerRef.current) setSignOutCount((c) => c + 1);
         setUser(null);
+        setSession(null);
         setStatus("unauthenticated");
-        setSigningOut(false);
         redirectOnce(to === "/auth" ? "/auth" : "/auth?next=%2F");
       }
     })();
-
-    signOutInFlightRef.current = run;
-    void run.finally(() => {
-      signOutInFlightRef.current = null;
-    });
-    return run;
+    return signOutInFlightRef.current;
   }, []);
 
+  /** Bounded refresh, exposed for the session-restore recovery UI. */
+  const refreshSession = useCallback(async () => {
+    const result = await raceWithTimeout(
+      supabase.auth.refreshSession(),
+      AUTH_RESTORE_TIMEOUT_MS,
+      null as never,
+    );
+    if (result === null || result?.error || !result?.data?.session) {
+      setRestoreFailed(true);
+      setUser(null);
+      setSession(null);
+      setStatus("unauthenticated");
+      return;
+    }
+    setRestoreFailed(false);
+    setSession({
+      user_id: result.data.session.user.id,
+      email: result.data.session.user.email ?? null,
+      expires_at: result.data.session.expires_at ?? null,
+    });
+    setUser(toAuthUser(result.data.session.user as never));
+    setStatus("authenticated");
+  }, []);
+
+  const retryRestore = useCallback(() => {
+    setRestoreFailed(false);
+    void restoreFnRef.current();
+  }, []);
+
+  const signingOut = status === "signing_out";
+
   return (
-    <AuthContext.Provider value={{ status, user, signingOut, signInCount, signOutCount, signOut }}>
+    <AuthContext.Provider
+      value={{
+        status,
+        user,
+        session,
+        signingOut,
+        signInCount,
+        signOutCount,
+        restoreFailed,
+        signOut,
+        refreshSession,
+        retryRestore,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

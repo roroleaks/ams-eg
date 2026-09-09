@@ -2,6 +2,10 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { AUTH_RESTORE_TIMEOUT_MS, raceWithTimeout } from "@/lib/sign-out";
+
+type SessionOutcome = Awaited<ReturnType<typeof supabase.auth.getSession>>;
+type UserOutcome = Awaited<ReturnType<typeof supabase.auth.getUser>>;
 
 function AuthLoading() {
   return (
@@ -17,16 +21,34 @@ function AuthLoading() {
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
-    await supabase.auth.getSession();
-    const { data, error } = await supabase.auth.getUser();
+    // Bounded session check so a stalled provider can never leave a protected
+    // route frozen on the loading screen — it degrades to the auth page.
     const dest =
       typeof window !== "undefined"
         ? `${window.location.pathname}${window.location.search}`
         : "/";
-    if (error || !data.user) {
+    const toAuth = (): never => {
       throw redirect({ to: "/auth", search: { next: dest !== "/auth" ? dest : "/" } });
-    }
-    return { user: data.user };
+    };
+
+    const res = await raceWithTimeout<SessionOutcome, "TIMEOUT">(
+      supabase.auth.getSession(),
+      AUTH_RESTORE_TIMEOUT_MS,
+      "TIMEOUT",
+    );
+    if (res === "TIMEOUT") toAuth();
+    const sessionOutcome = res as SessionOutcome;
+    if (sessionOutcome.error || !sessionOutcome.data.session) toAuth();
+
+    const userRes = await raceWithTimeout<UserOutcome, "TIMEOUT">(
+      supabase.auth.getUser(),
+      AUTH_RESTORE_TIMEOUT_MS,
+      "TIMEOUT",
+    );
+    if (userRes === "TIMEOUT") toAuth();
+    const userOutcome = userRes as UserOutcome;
+    if (userOutcome.error || !userOutcome.data.user) toAuth();
+    return { user: userOutcome.data.user! };
   },
   component: ProtectedLayout,
 });
