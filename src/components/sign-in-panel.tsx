@@ -18,6 +18,20 @@ function safeNext(next: string | null | undefined): string {
 }
 const LAST_EMAIL_KEY = "ams_last_login_email";
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+// Surface provider errors verbatim, but translate transport-level failures into
+// a clear network message instead of leaking technical "fetch failed" text.
+function friendlyAuthError(err: unknown): string {
+  if (err instanceof Error && err.message) {
+    if (/(fetch failed|network|load failed|timeout|connection|socket)/i.test(err.message)) {
+      return "Network error — check your connection and try again.";
+    }
+    return err.message;
+  }
+  return "Something went wrong. Please try again.";
+}
+
 /**
  * Passwordless email sign-in flow (magic link). Used both as a full page
  * (route /auth) and inside the AuthGate modal. Sign-in always goes through
@@ -76,10 +90,18 @@ export function SignInPanel({
 
   /** Reject accounts whose profile is not active (suspended / deleted). */
   async function ensureActiveAccount(): Promise<boolean> {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return false;
+    let user: { id: string; email?: string | null } | null = null;
+    try {
+      const { data } = await supabase.auth.getUser();
+      user = data.user;
+    } catch {
+      setError("We couldn't verify your account. Check your connection and try again.");
+      return false;
+    }
+    if (!user) {
+      setError("Your session could not be verified. Please request a new sign-in link and try again.");
+      return false;
+    }
     const { data: profile } = await supabase
       .from("profiles")
       .select("status")
@@ -144,7 +166,9 @@ export function SignInPanel({
         const { data } = await supabase.auth.getSession();
         if (!cancelled && data.session) await finishAuthentication();
       }
-    })();
+    })().catch((error) => {
+      if (!cancelled) setError(friendlyAuthError(error));
+    });
     return () => {
       cancelled = true;
     };
@@ -154,7 +178,9 @@ export function SignInPanel({
   /** Complete auth whenever Supabase reports a signed-in user (async recovery). */
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user && !completedRef.current) void finishAuthentication();
+      if (session?.user && !completedRef.current) {
+        void finishAuthentication().catch((error) => setError(friendlyAuthError(error)));
+      }
     });
     return () => sub.subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -184,6 +210,10 @@ export function SignInPanel({
       setError("Please enter your email address.");
       return;
     }
+    if (!EMAIL_RE.test(normalized)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
     setEmail(normalized);
     setLoading(true);
     try {
@@ -210,7 +240,7 @@ export function SignInPanel({
       setStep("sent");
       startResendCountdown();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(friendlyAuthError(err));
     } finally {
       setLoading(false);
     }
