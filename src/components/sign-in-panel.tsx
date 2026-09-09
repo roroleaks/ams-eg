@@ -167,6 +167,7 @@ export function SignInPanel({
 
   async function onRequestCode(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError(null);
     setInfo(null);
     const normalized = email.trim().toLowerCase();

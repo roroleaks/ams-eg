@@ -93,7 +93,7 @@ function AuthPage() {
               </p>
               <Button
                 className="w-full"
-                onClick={() => doSignOut(confirmAction === "switch" ? "/auth" : "/")}
+                onClick={() => doSignOut(confirmAction === "switch" ? "/auth" : "/auth?next=%2F")}
               >
                 {confirmAction === "switch" ? "Switch account" : "Sign out"}
               </Button>
