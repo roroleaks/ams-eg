@@ -75,3 +75,29 @@ export function redirectOnce(to: string): void {
   if (typeof window === "undefined") return;
   window.location.href = to;
 }
+
+/**
+ * One-shot flag consumed by /auth to show a safe "local session only" notice
+ * when the provider was unreachable and we could only clear the device.
+ */
+const LOCAL_CLEAR_FLAG = "ams_signout_local_cleared";
+
+export function markLocalCleared(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(LOCAL_CLEAR_FLAG, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
+export function consumeLocalCleared(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const hit = window.sessionStorage.getItem(LOCAL_CLEAR_FLAG) === "1";
+    window.sessionStorage.removeItem(LOCAL_CLEAR_FLAG);
+    return hit;
+  } catch {
+    return false;
+  }
+}

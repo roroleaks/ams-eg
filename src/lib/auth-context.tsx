@@ -12,6 +12,7 @@ import {
   SIGN_OUT_TIMEOUT_MS,
   clearAuthTokens,
   delay,
+  markLocalCleared,
   redirectOnce,
   scheduleSessionCleanup,
 } from "@/lib/sign-out";
@@ -183,8 +184,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const outcome = await race;
         if (outcome === "timeout") {
           // Provider did not answer in time: end the session on this device
-          // locally so the app never stays in a signed-in state.
+          // locally so the app never stays in a signed-in state, and flag the
+          // /auth page to show a safe "local session only" notice.
           clearAuthTokens();
+          markLocalCleared();
         }
       } finally {
         if (!signedOutByListenerRef.current) setSignOutCount((c) => c + 1);

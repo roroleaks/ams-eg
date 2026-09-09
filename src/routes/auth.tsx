@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SignInPanel } from "@/components/sign-in-panel";
 import { useAuth } from "@/lib/auth-context";
+import { consumeLocalCleared } from "@/lib/sign-out";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
@@ -37,8 +38,16 @@ function AuthPage() {
   const checking = status === "loading";
   const signedInEmail = user?.email ?? null;
   const [expired, setExpired] = useState(false);
+  const [localCleared, setLocalCleared] = useState(false);
   const [confirmAction, setConfirmAction] = useState<null | "switch" | "signout">(null);
   const [tab, setTab] = useState<"signin" | "create">("signin");
+
+  // A one-shot notice when a sign-out could only clear the device locally (the
+  // provider was unreachable). It never claims the server session was ended.
+  useEffect(() => {
+    if (status !== "unauthenticated") return;
+    setLocalCleared(consumeLocalCleared());
+  }, [status]);
 
   // A leftover stored token that no longer validates means the session
   // expired. Detect it once the provider has finished restoring.
@@ -134,6 +143,11 @@ function AuthPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
       <Card className="w-full max-w-md p-8">
+        {localCleared && (
+          <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
+            Your local session was cleared. Please reload if the app still appears signed in.
+          </p>
+        )}
         {expired && (
           <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
             Your session expired. Please sign in again.
