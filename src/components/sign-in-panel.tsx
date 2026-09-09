@@ -195,9 +195,7 @@ export function SignInPanel({
       setRemembered(normalized);
       // Generic message — never reveals whether an account exists.
       setInfo(
-        mode === "create"
-          ? "If this email already has an account, you'll be signed in. If it's new, a user account will be created after you verify."
-          : "If an account exists for this address, you'll get a link in the mail. Click it to sign straight in.",
+        "If this email already has an account, you will be signed in. If it is new, an account will be created after email verification.",
       );
       setStep("sent");
       startResendCountdown();
@@ -289,7 +287,7 @@ export function SignInPanel({
             {mode === "create" ? "New to AMS?" : "Already have an account?"}
           </p>
           <div>
-            <Label htmlFor="signin-email">Work email</Label>
+            <Label htmlFor="signin-email">Email address</Label>
             <Input
               id="signin-email"
               type="email"
@@ -297,7 +295,7 @@ export function SignInPanel({
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              placeholder="you@organisation.com"
+              placeholder="you@example.com"
             />
           </div>
           {remembered && email === remembered && (
@@ -312,9 +310,8 @@ export function SignInPanel({
           {error && <p className="text-sm text-destructive">{error}</p>}
           {info && <p className="text-sm text-muted-foreground">{info}</p>}
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            {mode === "create"
-              ? "We will verify your email before creating your account."
-              : "We will send a secure login link to your email. No password is required."}
+            If this email already has an account, you will be signed in. If it is new, an account
+            will be created after email verification.
           </p>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? (
