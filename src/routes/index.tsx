@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -47,6 +47,7 @@ import { normalizeComplaint } from "@/lib/activity-privacy";
 import { isAdmin as isAdminFn } from "@/lib/admin.functions";
 import { completeSignOut } from "@/lib/auth-actions";
 import { useSessionTracker } from "@/lib/session";
+import { AuthGate, useAuthGate } from "@/components/auth-gate";
 import { supabase } from "@/integrations/supabase/client";
 import { getProductImage } from "@/data/product-images";
 
@@ -140,17 +141,29 @@ function Index() {
     avatar?: string;
   } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const seqRef = useRef(0);
   const lastLoggedRef = useRef<string>("");
-  const navigate = useNavigate();
+  const { openGate, closeGate, resumePending, pending } = useAuthGate();
 
-  function pickComplaint(q: string) {
-    if (session) {
-      setQuery(q);
-      track({ event_type: "complaint_shortcut_selected", complaint_raw: q });
-    } else {
-      navigate({ to: "/auth", search: { next: authNext(q) } });
-    }
+  const runComplaint = (q: string) => {
+    setQuery(q);
+    track({ event_type: "complaint_shortcut_selected", complaint_raw: q });
+  };
+
+  /** Reusable guard: run a complaint immediately, or open sign-in and resume it. */
+  function guardComplaint(q: string) {
+    if (authLoading) return;
+    if (session) runComplaint(q);
+    else openGate({ label: q, next: authNext(q), run: () => runComplaint(q) });
+  }
+
+  /** Guard for running a search (Enter key / gate panel). */
+  function guardSearch(q: string) {
+    if (authLoading) return;
+    if (!q.trim()) return;
+    if (session) return;
+    openGate({ label: q.trim(), next: authNext(q), run: () => setQuery(q) });
   }
 
   useEffect(() => {
@@ -177,6 +190,8 @@ function Index() {
     };
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) apply(data.user as any);
+      else apply(null);
+      setAuthLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
@@ -398,7 +413,7 @@ function Index() {
       qVec={qVec}
       embedding={embedding}
       large={!hasQuery}
-      onSubmit={() => pickComplaint(query)}
+      onSubmit={() => guardSearch(query)}
     />
   );
 
@@ -524,7 +539,7 @@ function Index() {
                 <button
                   key={s.label}
                   type="button"
-                  onClick={() => pickComplaint(s.label)}
+                  onClick={() => guardComplaint(s.label)}
                   style={{ animationDelay: `${i * 35}ms` }}
                   className="surface-card hover-lift animate-fade-in group p-4 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
@@ -547,7 +562,7 @@ function Index() {
                 <button
                   key={c}
                   type="button"
-                  onClick={() => pickComplaint(c)}
+                  onClick={() => guardComplaint(c)}
                   className="rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:text-primary"
                 >
                   {c}
@@ -578,7 +593,7 @@ function Index() {
                   <button
                     key={c}
                     type="button"
-                    onClick={() => pickComplaint(c)}
+                    onClick={() => guardComplaint(c)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                       query === c
                         ? "border-primary bg-primary text-primary-foreground"
@@ -594,7 +609,7 @@ function Index() {
 
           <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
             {!session ? (
-              <SignInGate nextPath={authNext(query)} />
+              <SignInGate nextPath={authNext(query)} onSignIn={() => guardSearch(query)} />
             ) : matches.length === 0 ? (
               embedding || !ready ? (
                 <LoadingPanel mode="search" />
@@ -743,6 +758,8 @@ function Index() {
       <footer className="border-t border-border/50 py-4 text-center print:hidden">
         <p className="text-[10px] text-muted-foreground/70">Created by Dr Raouf Roshdy</p>
       </footer>
+
+      <AuthGate pending={pending} onClose={closeGate} onSuccess={resumePending} />
     </div>
   );
 }
@@ -880,7 +897,7 @@ function authNext(q: string): string {
   return trimmed ? `/?q=${encodeURIComponent(trimmed)}` : "/";
 }
 
-function SignInGate({ nextPath }: { nextPath: string }) {
+function SignInGate({ nextPath, onSignIn }: { nextPath: string; onSignIn: () => void }) {
   return (
     <div className="surface-card animate-fade-in p-12 text-center">
       <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary/10">
@@ -895,13 +912,15 @@ function SignInGate({ nextPath }: { nextPath: string }) {
         one-time code.
       </p>
       <div className="mt-6 flex justify-center">
-        <Link to="/auth" search={{ next: nextPath }}>
-          <Button className="gap-2 rounded-full">
-            <LogIn className="h-4 w-4" />
-            Sign in to continue
-          </Button>
-        </Link>
+        <Button className="gap-2 rounded-full" onClick={onSignIn}>
+          <LogIn className="h-4 w-4" />
+          Sign in to continue
+        </Button>
       </div>
+      <p className="mt-4 text-[11px] leading-relaxed text-muted-foreground">
+        Taking you to {nextPath === "/" ? "the homepage" : `“${nextPath}”`} after sign-in to pick up
+        where you left off.
+      </p>
     </div>
   );
 }
