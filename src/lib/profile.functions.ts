@@ -11,25 +11,47 @@ export const touchProfile = createServerFn({ method: "POST" })
     const claims = context.claims as Record<string, any>;
     const meta = (claims.user_metadata ?? {}) as Record<string, any>;
     const now = new Date().toISOString();
-    const patch = {
+    // display_name / role / status / last_sign_in_at / last_active_at are added
+    // by the pending migration. Until it is applied, those columns do not exist
+    // on the live database, so we fall back to the base column set rather than
+    // failing (and never, ever creating the profile).
+    const fullPatch = {
       id: context.userId,
       email: (claims.email as string) ?? null,
-      full_name: meta.full_name ?? meta.name ?? null,
-      display_name: meta.full_name ?? meta.name ?? meta.email ?? null,
-      avatar_url: meta.avatar_url ?? meta.picture ?? null,
+      full_name: (meta.full_name as string) ?? null,
+      display_name: (meta.full_name as string ?? meta.name as string ?? meta.email as string) ?? null,
+      avatar_url: (meta.avatar_url as string) ?? (meta.picture as string) ?? null,
       provider: (claims.app_metadata as any)?.provider ?? null,
-      provider_account_id: meta.sub ?? meta.provider_id ?? null,
+      provider_account_id: (meta.sub as string) ?? (meta.provider_id as string) ?? null,
       last_login_at: now,
       last_sign_in_at: now,
       last_active_at: now,
     };
     const { data, error } = await context.supabase
       .from("profiles")
-      .upsert(patch, { onConflict: "id" })
+      .upsert(fullPatch, { onConflict: "id" })
       .select()
       .single();
+    if (error && /column .* does not exist/i.test(error.message ?? "")) {
+      const minimal = {
+        id: context.userId,
+        email: fullPatch.email,
+        full_name: fullPatch.full_name,
+        avatar_url: fullPatch.avatar_url,
+        provider: fullPatch.provider,
+        provider_account_id: fullPatch.provider_account_id,
+        last_login_at: now,
+      };
+      const { data: d2, error: e2 } = await context.supabase
+        .from("profiles")
+        .upsert(minimal, { onConflict: "id" })
+        .select()
+        .single();
+      if (e2) throw new Error(e2.message);
+      return { profile: d2, degraded: true };
+    }
     if (error) throw new Error(error.message);
-    return { profile: data };
+    return { profile: data, degraded: false };
   });
 
 export const getMyProfile = createServerFn({ method: "GET" })
