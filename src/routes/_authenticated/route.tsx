@@ -38,13 +38,21 @@ function ProtectedLayout() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const { data: profile } = await supabase
+      const { data: profile, error } = await supabase
         .from("profiles")
         .select("status")
         .eq("id", user.id)
         .maybeSingle();
       if (!mounted) return;
-      if (!profile || profile.status !== "active") {
+      // A failed read (e.g. profiles.status does not exist because the schema
+      // migration is still pending) must not nuke a valid session.
+      if (error) {
+        setReady(true);
+        return;
+      }
+      // Only an explicit suspension/deletion blocks access; a missing benign
+      // profile row is not a reason to log the user out.
+      if (profile && (profile.status === "suspended" || profile.status === "deleted")) {
         await completeSignOut();
         return;
       }
