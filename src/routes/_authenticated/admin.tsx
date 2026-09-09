@@ -1,8 +1,9 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,7 +67,6 @@ import {
   exportRegisteredUsers,
 } from "@/lib/admin.functions";
 import { sessionOverview } from "@/lib/session.functions";
-import { completeSignOut } from "@/lib/auth-actions";
 import { useSessionTracker } from "@/lib/session";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -75,7 +75,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 });
 
 function AdminPage() {
-  const navigate = useNavigate();
+  const { signOut, signingOut } = useAuth();
   const isAdminServer = useServerFn(isAdminFn);
   const [ready, setReady] = useState(false);
   const [allowed, setAllowed] = useState(false);
@@ -120,9 +120,8 @@ function AdminPage() {
     );
   }
 
-  async function signOut() {
-    await completeSignOut();
-    navigate({ to: "/auth", replace: true });
+  function doSignOut() {
+    void signOut();
   }
 
   return (
@@ -142,8 +141,8 @@ function AdminPage() {
                 <ArrowLeft className="h-4 w-4 mr-1" /> Search
               </Button>
             </Link>
-            <Button variant="outline" size="sm" onClick={signOut}>
-              <LogOut className="h-4 w-4 mr-1" /> Sign out
+            <Button variant="outline" size="sm" disabled={signingOut} onClick={doSignOut}>
+              <LogOut className="h-4 w-4 mr-1" /> {signingOut ? "Signing out…" : "Sign out"}
             </Button>
           </div>
         </div>

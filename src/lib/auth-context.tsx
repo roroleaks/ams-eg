@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -7,6 +8,13 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  SIGN_OUT_TIMEOUT_MS,
+  clearAuthTokens,
+  delay,
+  redirectOnce,
+  scheduleSessionCleanup,
+} from "@/lib/sign-out";
 
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -21,17 +29,27 @@ export interface AuthUser {
 interface AuthContextValue {
   status: AuthStatus;
   user: AuthUser | null;
+  /** True while a sign-out operation is in progress (UI shows "Signing out…"). */
+  signingOut: boolean;
   /** Increments on real sign-in events, never on restores/refreshes. */
   signInCount: number;
   /** Increments on real sign-out events. */
   signOutCount: number;
+  /**
+   * The single shared sign-out operation. Bounded (5s provider timeout),
+   * re-entrant calls reuse the in-flight operation, optional session cleanup
+   * never blocks it, and it always redirects to `/auth?next=%2F` (or `to`).
+   */
+  signOut: (to?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   status: "loading",
   user: null,
+  signingOut: false,
   signInCount: 0,
   signOutCount: 0,
+  signOut: () => Promise.resolve(),
 });
 
 function toAuthUser(u: {
@@ -58,9 +76,12 @@ function toAuthUser(u: {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const [signInCount, setSignInCount] = useState(0);
   const [signOutCount, setSignOutCount] = useState(0);
   const startedRef = useRef(false);
+  const signOutInFlightRef = useRef<Promise<void> | null>(null);
+  const signedOutByListenerRef = useRef(false);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -83,7 +104,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           })
         : null;
       if (event === "SIGNED_IN") setSignInCount((c) => c + 1);
-      if (event === "SIGNED_OUT") setSignOutCount((c) => c + 1);
+      if (event === "SIGNED_OUT") {
+        signedOutByListenerRef.current = true;
+        setSignOutCount((c) => c + 1);
+      }
       if (
         event === "SIGNED_IN" ||
         event === "SIGNED_OUT" ||
@@ -135,8 +159,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /**
+   * The single shared sign-out operation. All Sign out buttons call this through
+   * the provider so the header and the auth page can never run two independent
+   * logout flows, and repeated clicks reuse the same in-flight operation.
+   */
+  const signOut = useCallback((to = "/auth?next=%2F"): Promise<void> => {
+    if (signOutInFlightRef.current) return signOutInFlightRef.current;
+
+    const run = (async () => {
+      setSigningOut(true);
+      signedOutByListenerRef.current = false;
+
+      // Optional session-record cleanup: bounded and in the background. It can
+      // never delay ending the authentication session.
+      scheduleSessionCleanup();
+
+      const race = Promise.race([
+        supabase.auth.signOut().then(() => "ok" as const).catch(() => "ok" as const),
+        delay(SIGN_OUT_TIMEOUT_MS).then(() => "timeout" as const),
+      ]);
+      try {
+        const outcome = await race;
+        if (outcome === "timeout") {
+          // Provider did not answer in time: end the session on this device
+          // locally so the app never stays in a signed-in state.
+          clearAuthTokens();
+        }
+      } finally {
+        if (!signedOutByListenerRef.current) setSignOutCount((c) => c + 1);
+        setUser(null);
+        setStatus("unauthenticated");
+        setSigningOut(false);
+        redirectOnce(to === "/auth" ? "/auth" : "/auth?next=%2F");
+      }
+    })();
+
+    signOutInFlightRef.current = run;
+    void run.finally(() => {
+      signOutInFlightRef.current = null;
+    });
+    return run;
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ status, user, signInCount, signOutCount }}>
+    <AuthContext.Provider value={{ status, user, signingOut, signInCount, signOutCount, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,7 +1,7 @@
-import { createFileRoute, Outlet, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { completeSignOut } from "@/lib/auth-actions";
+import { useAuth } from "@/lib/auth-context";
 
 function AuthLoading() {
   return (
@@ -33,7 +33,7 @@ export const Route = createFileRoute("/_authenticated")({
 
 function ProtectedLayout() {
   const { user } = Route.useRouteContext();
-  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -54,7 +54,7 @@ function ProtectedLayout() {
       // Only an explicit suspension/deletion blocks access; a missing benign
       // profile row is not a reason to log the user out.
       if (profile && (profile.status === "suspended" || profile.status === "deleted")) {
-        await completeSignOut();
+        void signOut();
         return;
       }
       setReady(true);
@@ -62,7 +62,7 @@ function ProtectedLayout() {
     return () => {
       mounted = false;
     };
-  }, [user.id, navigate]);
+  }, [user.id, signOut]);
 
   if (!ready) return <AuthLoading />;
   return <Outlet />;

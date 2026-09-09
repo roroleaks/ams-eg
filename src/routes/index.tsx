@@ -46,7 +46,6 @@ import {
 import { track, startNewSession } from "@/lib/activity";
 import { normalizeComplaint } from "@/lib/activity-privacy";
 import { isAdmin as isAdminFn } from "@/lib/admin.functions";
-import { completeSignOut } from "@/lib/auth-actions";
 import { useSessionTracker } from "@/lib/session";
 import { AuthGate, useAuthGate } from "@/components/auth-gate";
 import { useAuth } from "@/lib/auth-context";
@@ -138,7 +137,7 @@ function Index() {
   const [litError, setLitError] = useState<string | null>(null);
   const litSettledRef = useRef(false);
   const [useLiterature, setUseLiterature] = useState(true);
-  const { status, user, signInCount, signOutCount } = useAuth();
+  const { status, user, signInCount, signOutCount, signingOut, signOut } = useAuth();
   const authLoading = status === "loading";
   const session = useMemo(
     () => (user ? { email: user.email ?? undefined, name: user.name, avatar: user.avatar } : null),
@@ -520,11 +519,20 @@ function Index() {
                   variant="ghost"
                   size="sm"
                   className="rounded-full"
-                  onClick={completeSignOut}
+                  disabled={signingOut}
+                  onClick={() => {
+                    if (window.confirm("Sign out from this device?")) void signOut();
+                  }}
                   title={session.email}
                 >
-                  <LogOut className="h-4 w-4 sm:mr-1" />
-                  <span className="hidden sm:inline">Sign out</span>
+                  {signingOut ? (
+                    <Loader2 className="h-4 w-4 animate-spin sm:mr-1" />
+                  ) : (
+                    <LogOut className="h-4 w-4 sm:mr-1" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {signingOut ? "Signing out…" : "Sign out"}
+                  </span>
                 </Button>
               </>
             ) : (

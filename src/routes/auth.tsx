@@ -1,11 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SignInPanel } from "@/components/sign-in-panel";
 import { useAuth } from "@/lib/auth-context";
-import { endTrackedSession } from "@/lib/session";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
@@ -35,7 +33,7 @@ function hasStoredAuthToken(): boolean {
 function AuthPage() {
   const { next } = Route.useSearch();
   const dest = safeNext(next || "/");
-  const { status, user } = useAuth();
+  const { status, user, signOut, signingOut } = useAuth();
   const checking = status === "loading";
   const signedInEmail = user?.email ?? null;
   const [expired, setExpired] = useState(false);
@@ -65,11 +63,9 @@ function AuthPage() {
     );
   }
 
-  async function doSignOut(go: string) {
+  function doSignOut(go: string) {
     setConfirmAction(null);
-    await endTrackedSession();
-    await supabase.auth.signOut();
-    window.location.href = go;
+    void signOut(go);
   }
 
   if (signedInEmail) {
@@ -94,11 +90,26 @@ function AuthPage() {
               </p>
               <Button
                 className="w-full"
+                disabled={signingOut}
                 onClick={() => doSignOut(confirmAction === "switch" ? "/auth" : "/auth?next=%2F")}
               >
-                {confirmAction === "switch" ? "Switch account" : "Sign out"}
+                {signingOut ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Signing out…
+                  </>
+                ) : confirmAction === "switch" ? (
+                  "Switch account"
+                ) : (
+                  "Sign out"
+                )}
               </Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => setConfirmAction(null)}>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                disabled={signingOut}
+                onClick={() => setConfirmAction(null)}
+              >
                 Cancel
               </Button>
             </div>

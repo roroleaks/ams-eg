@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -14,7 +14,7 @@ import {
   deleteSearchHistory,
   toggleFavorite,
 } from "@/lib/profile.functions";
-import { completeSignOut } from "@/lib/auth-actions";
+import { useAuth } from "@/lib/auth-context";
 import { useSessionTracker } from "@/lib/session";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -39,8 +39,8 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function Dashboard() {
-  const navigate = useNavigate();
   const qc = useQueryClient();
+  const { signOut, signingOut } = useAuth();
   const profileFn = useServerFn(getMyProfile);
   const historyFn = useServerFn(listSearchHistory);
   const favFn = useServerFn(listFavorites);
@@ -69,11 +69,9 @@ function Dashboard() {
 
   const p = profile.data?.profile as any;
 
-  async function signOut() {
-    await qc.cancelQueries();
+  function doSignOut() {
     qc.clear();
-    await completeSignOut();
-    navigate({ to: "/", replace: true });
+    void signOut();
   }
 
   return (
@@ -93,8 +91,8 @@ function Dashboard() {
                 <ArrowLeft className="mr-1 h-4 w-4" /> Search
               </Button>
             </Link>
-            <Button variant="outline" size="sm" onClick={signOut}>
-              <LogOut className="mr-1 h-4 w-4" /> Sign out
+            <Button variant="outline" size="sm" disabled={signingOut} onClick={doSignOut}>
+              <LogOut className="mr-1 h-4 w-4" /> {signingOut ? "Signing out…" : "Sign out"}
             </Button>
           </div>
         </div>

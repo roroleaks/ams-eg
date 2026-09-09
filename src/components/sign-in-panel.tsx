@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Loader2, Mail } from "lucide-react";
+import { delay, SIGN_OUT_TIMEOUT_MS } from "@/lib/sign-out";
 
 const RESEND_COOLDOWN_S = 60;
 
@@ -108,7 +109,10 @@ export function SignInPanel({
       .eq("id", user.id)
       .maybeSingle();
     if (profile && profile.status !== "active") {
-      await supabase.auth.signOut();
+      void Promise.race([
+        supabase.auth.signOut().catch(() => {}),
+        delay(SIGN_OUT_TIMEOUT_MS),
+      ]);
       setError("Your account is currently suspended. Contact your administrator for access.");
       return false;
     }
