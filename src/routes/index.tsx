@@ -205,7 +205,20 @@ function Index() {
         if (event === "SIGNED_OUT") track({ event_type: "user_signed_out" });
       }
     });
-    return () => sub.subscription.unsubscribe();
+    // Sync when the session changes in another tab (e.g. magic link opened in
+    // a new tab, or sign-out performed elsewhere).
+    const onStorage = (e: StorageEvent) => {
+      if (e.key && e.key.startsWith("sb-") && e.key.endsWith("-auth-token")) {
+        void supabase.auth.getSession().then(({ data: { session } }) => {
+          apply((session?.user as any) ?? null);
+        });
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      sub.subscription.unsubscribe();
+      window.removeEventListener("storage", onStorage);
+    };
   }, [isAdminServer, touchProfileFn, listFavoritesFn]);
 
   useSessionTracker(!!session);

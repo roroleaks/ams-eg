@@ -185,10 +185,16 @@ export function SignInPanel({
     e.preventDefault();
     setError(null);
     setInfo(null);
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) {
+      setError("Please enter your email address.");
+      return;
+    }
+    setEmail(normalized);
     setLoading(true);
     try {
       const { error } = await supabase.auth.signInWithOtp({
-        email,
+        email: normalized,
         options: {
           emailRedirectTo: `${window.location.origin}/auth${
             next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
@@ -196,6 +202,12 @@ export function SignInPanel({
         },
       });
       if (error) throw error;
+      try {
+        localStorage.setItem(LAST_EMAIL_KEY, normalized);
+      } catch {
+        /* ignore */
+      }
+      setRemembered(normalized);
       // Generic message — never reveals whether an account exists.
       setInfo(
         mode === "create"
@@ -326,9 +338,17 @@ export function SignInPanel({
               : "We will send a secure login link to your email. No password is required."}
           </p>
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            <Mail className="mr-2 h-4 w-4" />
-            {mode === "create" ? "Create account" : "Send me a sign-in link"}
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {mode === "create" ? "Creating account…" : "Sending sign-in link…"}
+              </>
+            ) : (
+              <>
+                <Mail className="mr-2 h-4 w-4" />
+                {mode === "create" ? "Create account" : "Send me a sign-in link"}
+              </>
+            )}
           </Button>
         </form>
       ) : (
