@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { SignInPanel } from "@/components/sign-in-panel";
+import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — AMS" }] }),
@@ -20,6 +21,7 @@ function safeNext(next: string): string {
 function AuthPage() {
   const { next } = Route.useSearch();
   const dest = safeNext(next || "/");
+  const [checking, setChecking] = useState(true);
 
   // Fresh page load with an active session → straight to the app. Skipped when
   // a magic-link / OAuth callback is present (the panel handles those).
@@ -28,18 +30,32 @@ function AuthPage() {
     const hasCode = params.get("code");
     const hasTokenHash = params.get("token_hash");
     const hasOauthError = params.get("error");
-    if (window.location.hash.length > 0 || hasCode || hasTokenHash || hasOauthError) return;
+    if (window.location.hash.length > 0 || hasCode || hasTokenHash || hasOauthError) {
+      setChecking(false);
+      return;
+    }
     let cancelled = false;
-    supabase.auth
-      .getUser()
-      .then(({ data }) => {
-        if (!cancelled && data.user) window.location.href = dest;
-      })
-      .catch(() => {});
+    (async () => {
+      await supabase.auth.getSession();
+      const { data } = await supabase.auth.getUser();
+      if (!cancelled) {
+        if (data.user) window.location.href = dest;
+        else setChecking(false);
+      }
+    })().catch(() => setChecking(false));
     return () => {
       cancelled = true;
     };
   }, [dest]);
+
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="sr-only">Restoring your session…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">

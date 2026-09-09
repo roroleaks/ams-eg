@@ -17,6 +17,7 @@ function AuthLoading() {
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
+    await supabase.auth.getSession();
     const { data, error } = await supabase.auth.getUser();
     const dest =
       typeof window !== "undefined"

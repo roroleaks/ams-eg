@@ -188,11 +188,13 @@ function Index() {
         )
         .catch(() => {});
     };
-    supabase.auth.getUser().then(({ data }) => {
+    (async () => {
+      await supabase.auth.getSession();
+      const { data } = await supabase.auth.getUser();
       if (data.user) apply(data.user as any);
       else apply(null);
       setAuthLoading(false);
-    });
+    })();
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
         apply((s?.user as any) ?? null);
@@ -416,6 +418,15 @@ function Index() {
       onSubmit={() => guardSearch(query)}
     />
   );
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="sr-only">Restoring your session…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

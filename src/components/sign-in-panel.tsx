@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Mail } from "lucide-react";
 
 const RESEND_COOLDOWN_S = 60;
+const LAST_EMAIL_KEY = "ams_last_login_email";
 
 /**
  * Passwordless email sign-in flow (magic link). Used both as a full page
@@ -28,7 +29,9 @@ export function SignInPanel({
   onClose?: () => void;
 }) {
   const [step, setStep] = useState<"email" | "sent">("email");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState<string>(
+    () => (typeof window !== "undefined" ? localStorage.getItem(LAST_EMAIL_KEY) ?? "" : ""),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -71,6 +74,13 @@ export function SignInPanel({
       await supabase.auth.signOut();
       setError("Your account is currently suspended. Contact your administrator for access.");
       return false;
+    }
+    if (user.email) {
+      try {
+        localStorage.setItem(LAST_EMAIL_KEY, user.email);
+      } catch {
+        /* ignore */
+      }
     }
     return true;
   }
