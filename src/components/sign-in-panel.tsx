@@ -9,9 +9,9 @@ import { Loader2, Mail } from "lucide-react";
 const RESEND_COOLDOWN_S = 60;
 
 /**
- * Shared email OTP / magic-link sign-in flow. Used both as a full page
- * (route /auth) and inside the AuthGate modal. Never verifies an arbitrary
- * email locally — sign-in always goes through Supabase OTP verification.
+ * Passwordless email sign-in flow (magic link). Used both as a full page
+ * (route /auth) and inside the AuthGate modal. Sign-in always goes through
+ * Supabase OTP magic-link verification via the emailed link.
  */
 export function SignInPanel({
   next = "/",
