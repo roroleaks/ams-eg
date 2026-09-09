@@ -15,10 +15,11 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-// Only allow same-origin relative paths; everything else falls back to "/".
+// Only allow same-origin relative paths; never bounce back to auth screens.
 function safeNext(next: string): string {
   if (!next.startsWith("/") || next.startsWith("//")) return "/";
   if (/^[/\\]{2}/.test(next)) return "/";
+  if (next === "/auth" || next.startsWith("/auth/") || next.startsWith("/auth?")) return "/";
   return next;
 }
 

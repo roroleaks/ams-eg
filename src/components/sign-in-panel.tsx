@@ -7,6 +7,15 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Mail } from "lucide-react";
 
 const RESEND_COOLDOWN_S = 60;
+
+// Same-origin relative paths only; anything else (external, scheme-URLs,
+// protocol-relative, auth screens) falls back to "/" to prevent open-redirect.
+function safeNext(next: string | null | undefined): string {
+  if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//")) return "/";
+  if (/^[/\\]{2}/.test(next)) return "/";
+  if (next === "/auth" || next.startsWith("/auth/") || next.startsWith("/auth?")) return "/";
+  return next;
+}
 const LAST_EMAIL_KEY = "ams_last_login_email";
 
 /**
@@ -101,7 +110,7 @@ export function SignInPanel({
     }
     onSuccess?.();
     deletePendingHash();
-    if (!onSuccess) window.location.href = next;
+    if (!onSuccess) window.location.href = safeNext(next);
   }
 
   /** Handles magic-link / OAuth exchange parameters appended to the URL. */
