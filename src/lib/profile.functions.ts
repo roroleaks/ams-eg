@@ -32,7 +32,12 @@ export const touchProfile = createServerFn({ method: "POST" })
       .upsert(fullPatch, { onConflict: "id" })
       .select()
       .single();
-    if (error && /column .* does not exist/i.test(error.message ?? "")) {
+    if (
+      error &&
+      /(?:column .* does not exist|could not find the ['"][^'"]+['"] column of .*? in the schema cache)/i.test(
+        error.message ?? "",
+      )
+    ) {
       const minimal = {
         id: context.userId,
         email: fullPatch.email,
