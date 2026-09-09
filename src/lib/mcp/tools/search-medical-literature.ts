@@ -49,7 +49,10 @@ export default defineTool({
     url.searchParams.set("pageSize", String(Math.min(25, cap * 2)));
     url.searchParams.set("sort", "P_PDATE_D desc");
 
-    const res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+    const res = await fetch(url.toString(), {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(15000),
+    });
     if (!res.ok) {
       return {
         content: [{ type: "text", text: `Europe PMC error ${res.status}` }],

@@ -174,6 +174,7 @@ ${litContext || "(none provided)"}`;
         "Content-Type": "application/json",
         Authorization: `Bearer ${key}`,
       },
+      signal: AbortSignal.timeout(60000),
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [

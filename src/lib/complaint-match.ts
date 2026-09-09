@@ -27,7 +27,7 @@ let cLoad: Promise<Float32Array> | null = null;
 export function loadComplaintEmbeddings(): Promise<Float32Array> {
   if (cEmb) return Promise.resolve(cEmb);
   if (cLoad) return cLoad;
-  cLoad = fetch("/complaint-embeddings.bin")
+  cLoad = fetch("/complaint-embeddings.bin", { signal: AbortSignal.timeout(20000) })
     .then((r) => {
       if (!r.ok) throw new Error("failed to load complaint embeddings");
       return r.arrayBuffer();

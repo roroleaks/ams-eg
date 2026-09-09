@@ -24,6 +24,7 @@ import {
   ClipboardList,
   Link2,
   Microscope,
+  Info,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -134,6 +135,8 @@ function Index() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [literature, setLiterature] = useState<LiteratureItem[]>([]);
   const [litLoading, setLitLoading] = useState(false);
+  const [litError, setLitError] = useState<string | null>(null);
+  const litSettledRef = useRef(false);
   const [useLiterature, setUseLiterature] = useState(true);
   const { status, user, signInCount, signOutCount } = useAuth();
   const authLoading = status === "loading";
@@ -209,11 +212,18 @@ function Index() {
 
   useSessionTracker(!!session);
 
-  // Preload both embedding matrices
+  // Preload embedding matrices in the background. Never blocks first paint or
+  // keyword matching: product results render instantly; semantic scoring
+  // upgrades once the matrices are available and quietly degrades on failure.
   useEffect(() => {
-    Promise.all([loadComplaintEmbeddings(), loadEmbeddings().catch(() => null)])
-      .then(() => setReady(true))
-      .catch(() => setReady(false));
+    let live = true;
+    loadComplaintEmbeddings()
+      .then(() => live && setReady(true))
+      .catch(() => live && setReady(false));
+    loadEmbeddings().catch(() => null);
+    return () => {
+      live = false;
+    };
   }, []);
 
   // Debounced query embedding
@@ -249,30 +259,54 @@ function Index() {
     setReportError(null);
   }, [query]);
 
-  // Fetch recent literature for the complaint (cached server-side)
+  // Fetch recent literature for the complaint (cached server-side). Runs in the
+  // background and can never hold the page in a loading state: the server call
+  // is timeout-bounded and a client watchdog clears the "Searching…" indicator
+  // even in the worst case.
   useEffect(() => {
     const q = query.trim();
     if (!q || !useLiterature || !session || matches.length === 0) {
       setLiterature([]);
+      setLitError(null);
+      setLitLoading(false);
       return;
     }
     let cancelled = false;
+    litSettledRef.current = false;
     setLitLoading(true);
+    setLitError(null);
     const handle = setTimeout(() => {
       literatureFn({ data: { query: q, yearsBack: 5, limit: 12 } })
-        .then(({ items }) => {
-          if (!cancelled) setLiterature(items);
+        .then(({ items, error }) => {
+          if (cancelled) return;
+          litSettledRef.current = true;
+          setLiterature(items);
+          setLitError(error ?? null);
         })
         .catch(() => {
-          if (!cancelled) setLiterature([]);
+          if (cancelled) return;
+          litSettledRef.current = true;
+          setLiterature([]);
+          setLitError(
+            "Medical literature search is temporarily unavailable. Please try again later.",
+          );
         })
         .finally(() => {
           if (!cancelled) setLitLoading(false);
         });
     }, 600);
+    // Transport-level watchdog: guarantee the spinner always clears.
+    const watchdog = setTimeout(() => {
+      if (cancelled) return;
+      setLitLoading(false);
+      if (!litSettledRef.current) {
+        setLitError("Medical literature search timed out. Showing product results only.");
+      }
+    }, 25000);
     return () => {
       cancelled = true;
       clearTimeout(handle);
+      clearTimeout(watchdog);
     };
   }, [query, useLiterature, matches.length, session, literatureFn]);
 
@@ -351,7 +385,7 @@ function Index() {
       let lit = literature;
       if (useLiterature && lit.length === 0) {
         try {
-          const { items } = await literatureFn({ data: { query, yearsBack: 5, limit: 10 } });
+          const { items } = await literatureFn({ data: { query, yearsBack: 5, limit: 12 } });
           lit = items;
           setLiterature(items);
         } catch {
@@ -621,11 +655,7 @@ function Index() {
             {!session ? (
               <SignInGate nextPath={authNext(query)} onSignIn={() => guardSearch(query)} />
             ) : matches.length === 0 ? (
-              embedding || !ready ? (
-                <LoadingPanel mode="search" />
-              ) : (
-                <EmptyResults query={query} />
-              )
+              <EmptyResults query={query} />
             ) : (
               <>
                 <div className="mb-6 grid gap-3 print:hidden sm:flex sm:flex-wrap sm:items-center sm:justify-between">
@@ -639,6 +669,11 @@ function Index() {
                         <span className="inline-flex items-center gap-1">
                           <Loader2 className="h-3 w-3 animate-spin" /> Searching recent medical
                           literature…
+                        </span>
+                      )}
+                      {litError && !litLoading && (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
+                          <Info className="h-3 w-3" /> {litError}
                         </span>
                       )}
                     </p>
@@ -694,7 +729,7 @@ function Index() {
                   </div>
                 )}
 
-                {reporting && !report && <LoadingPanel mode="report" />}
+                {reporting && !report && <LoadingPanel />}
 
                 {report && (
                   <ClinicalReport
@@ -843,18 +878,13 @@ function SearchBox({
           }`}
         >
           <Sparkles className="h-3 w-3" />
-          {ready ? (qVec ? "Semantic" : embedding ? "…" : "Keyword") : "Loading"}
+          {embedding ? "…" : ready && qVec ? "Semantic" : "Keyword"}
         </span>
       </div>
     </div>
   );
 }
 
-const SEARCH_STEPS = [
-  "Searching AMS product database…",
-  "Reviewing clinical monographs…",
-  "Matching official indications…",
-];
 const REPORT_STEPS = [
   "Reviewing clinical monographs…",
   "Searching recent medical literature…",
@@ -862,8 +892,8 @@ const REPORT_STEPS = [
   "Preparing clinical report…",
 ];
 
-function LoadingPanel({ mode }: { mode: "search" | "report" }) {
-  const steps = mode === "report" ? REPORT_STEPS : SEARCH_STEPS;
+function LoadingPanel() {
+  const steps = REPORT_STEPS;
   const [step, setStep] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setStep((s) => (s + 1) % steps.length), 1800);

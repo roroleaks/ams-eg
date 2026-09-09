@@ -218,6 +218,7 @@ async function embedBatch(texts: string[], apiKey: string): Promise<number[][]> 
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
+    signal: AbortSignal.timeout(30000),
     body: JSON.stringify({
       model: "openai/text-embedding-3-small",
       input: texts,

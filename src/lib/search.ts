@@ -81,7 +81,7 @@ let loadPromise: Promise<Float32Array> | null = null;
 export function loadEmbeddings(): Promise<Float32Array> {
   if (embeddings) return Promise.resolve(embeddings);
   if (loadPromise) return loadPromise;
-  loadPromise = fetch("/embeddings.bin")
+  loadPromise = fetch("/embeddings.bin", { signal: AbortSignal.timeout(20000) })
     .then((r) => {
       if (!r.ok) throw new Error("failed to load embeddings");
       return r.arrayBuffer();
