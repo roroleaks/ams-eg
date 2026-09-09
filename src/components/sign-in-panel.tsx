@@ -235,14 +235,8 @@ export function SignInPanel({
     setEmail("");
   }
 
-  const sentHeadline =
-    mode === "create" ? "Check your inbox to verify" : "Check your inbox";
-  const sentBodyStart =
-    mode === "create" ? "A verification link was sent to " : "A secure sign-in link was sent to ";
-  const sentBodyEnd =
-    mode === "create"
-      ? ". Click it to confirm your email and create your account."
-      : ". Click it in the mail and you'll be signed straight in.";
+  const sentHeadline = "Check your email";
+  const sentBodyStart = "We sent a secure sign-in link to your email address.";
 
   return (
     <div>
@@ -343,10 +337,9 @@ export function SignInPanel({
           </div>
           <div>
             <p className="font-semibold text-foreground">{sentHeadline}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {sentBodyStart}
-              <span className="font-medium">{email}</span>
-              {sentBodyEnd} If it doesn't arrive, check your spam folder.
+            <p className="mt-1 text-sm text-muted-foreground">{sentBodyStart}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Open the link in your email to continue to AMS Product Advisor.
             </p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -363,7 +356,7 @@ export function SignInPanel({
                 onRequestCode(new Event("submit") as any);
               }}
             >
-              {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend link"}
+              {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend sign-in link"}
             </Button>
             <Button type="button" variant="ghost" size="sm" onClick={backToEmail} disabled={loading}>
               Use a different email
