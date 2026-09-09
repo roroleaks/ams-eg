@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const PassageSchema = z.object({
   product: z.string().nullable().optional(),
@@ -30,6 +31,7 @@ const Input = z.object({
 
 export const summarizeResults = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
+  .middleware([requireSupabaseAuth])
   .handler(async ({ data }) => {
     const { getOptionalCaller, permissionDenied, clientKey, enforceRateLimit } = await import(
       "@/lib/ai-guard.server"

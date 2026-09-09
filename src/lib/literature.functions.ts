@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const Input = z.object({
   query: z.string().min(1).max(500),
@@ -49,6 +50,7 @@ function normalizeQuery(q: string): string {
 
 export const searchLiterature = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
+  .middleware([requireSupabaseAuth])
   .handler(async ({ data }): Promise<{ items: LiteratureItem[]; total: number }> => {
     const yearsBack = data.yearsBack ?? 5;
     const limit = data.limit ?? 12;
