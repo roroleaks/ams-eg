@@ -2,17 +2,42 @@ import { z } from "zod";
 
 /** Every event the activity/audit layer understands, grouped by category. */
 export const EVENT_TYPES = {
-  auth: ["user_signed_in", "user_signed_out", "account_created"],
-  search: ["search_performed", "complaint_selected", "search_completed", "search_no_result"],
+  auth: [
+    "user_signed_in",
+    "sign_in",
+    "user_signed_out",
+    "sign_out",
+    "account_created",
+    "session_started",
+    "session_heartbeat",
+    "session_ended",
+  ],
+  search: [
+    "search_performed",
+    "search_submitted",
+    "complaint_selected",
+    "complaint_shortcut_selected",
+    "recent_literature_enabled_or_disabled",
+    "search_completed",
+    "search_no_result",
+  ],
   product: [
     "product_result_viewed",
+    "result_opened",
     "product_details_opened",
+    "product_opened",
     "product_favorited",
     "product_unfavorited",
   ],
-  evidence: ["evidence_report_opened", "reference_opened", "monograph_opened"],
+  evidence: [
+    "evidence_report_opened",
+    "evidence_link_opened",
+    "reference_opened",
+    "monograph_opened",
+  ],
   report: ["report_generated", "report_opened", "report_exported"],
   saved: ["search_saved", "report_saved", "product_saved"],
+  page: ["page_view"],
 } as const;
 
 export type EventCategory = keyof typeof EVENT_TYPES;

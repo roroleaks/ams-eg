@@ -14,6 +14,8 @@ import {
   deleteSearchHistory,
   toggleFavorite,
 } from "@/lib/profile.functions";
+import { completeSignOut } from "@/lib/auth-actions";
+import { useSessionTracker } from "@/lib/session";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -63,12 +65,14 @@ function Dashboard() {
     document.title = "My Dashboard — AMS Product Advisor";
   }, []);
 
+  useSessionTracker(true);
+
   const p = profile.data?.profile as any;
 
   async function signOut() {
     await qc.cancelQueries();
     qc.clear();
-    await supabase.auth.signOut();
+    await completeSignOut();
     navigate({ to: "/", replace: true });
   }
 

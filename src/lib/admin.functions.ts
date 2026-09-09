@@ -43,6 +43,31 @@ async function log(
   });
 }
 
+/** Writes a tamper-evident admin action audit trail. */
+async function audit(
+  context: { supabase: any; userId: string },
+  {
+    action,
+    target_user_id = null,
+    details = {},
+  }: {
+    action: string;
+    target_user_id?: string | null;
+    details?: Record<string, unknown>;
+  },
+) {
+  try {
+    await context.supabase.from("admin_audit_logs").insert({
+      admin_id: context.userId,
+      action,
+      target_user_id,
+      details: details as never,
+    });
+  } catch {
+    /* auditing must never block the admin action itself */
+  }
+}
+
 // ============ Documents ============
 
 export const listDocuments = createServerFn({ method: "GET" })
@@ -382,6 +407,11 @@ export const setUserRole = createServerFn({ method: "POST" })
         .eq("user_id", data.user_id)
         .eq("role", data.role);
     }
+    await audit(context, {
+      action: data.grant ? "role_granted" : "role_revoked",
+      target_user_id: data.user_id,
+      details: { role: data.role },
+    });
     return { ok: true };
   });
 
@@ -413,7 +443,43 @@ export const setUserPermissions = createServerFn({ method: "POST" })
       { onConflict: "user_id" },
     );
     if (error) throw new Error(error.message);
+    await audit(context, {
+      action: "permissions_updated",
+      target_user_id: data.user_id,
+      details: {
+        can_search: data.can_search,
+        can_summarize: data.can_summarize,
+        can_download: data.can_download,
+      },
+    });
     return { ok: true };
+  });
+
+export const setUserStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        user_id: z.string().uuid(),
+        status: z.enum(["active", "suspended", "deleted"]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await requireAdmin(context);
+    if (data.user_id === context.userId) throw new Error("You cannot change your own account status");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("profiles")
+      .update({ status: data.status })
+      .eq("id", data.user_id);
+    if (error) throw new Error(error.message);
+    await audit(context, {
+      action: "user_status_changed",
+      target_user_id: data.user_id,
+      details: { status: data.status },
+    });
+    return { ok: true, status: data.status };
   });
 
 export const deleteUser = createServerFn({ method: "POST" })
@@ -425,6 +491,7 @@ export const deleteUser = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
     if (error) throw new Error(error.message);
+    await audit(context, { action: "user_deleted", target_user_id: data.user_id });
     return { ok: true };
   });
 
@@ -535,16 +602,19 @@ export const listRegisteredUsers = createServerFn({ method: "GET" })
       users: (profiles ?? []).map((p: any) => ({
         id: p.id,
         full_name: p.full_name,
+        display_name: p.display_name,
         email: p.email ?? authById.get(p.id)?.email ?? null,
         avatar_url: p.avatar_url,
         provider: p.provider,
         created_at: p.created_at,
         last_login_at: p.last_login_at ?? authById.get(p.id)?.last_sign_in_at ?? null,
+        last_active_at: p.last_active_at,
         search_count: p.search_count ?? 0,
         report_count: p.report_count ?? 0,
         favorites: favByUser.get(p.id) ?? [],
         roles: rolesByUser.get(p.id) ?? [],
-        status: "Registered" as const,
+        status: p.status ?? "active",
+        role: p.role ?? "user",
       })),
     };
   });
@@ -556,29 +626,37 @@ export const userAnalytics = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = Date.now();
     const dayAgo = new Date(now - 86400_000).toISOString();
+    const weekAgo = new Date(now - 7 * 86400_000).toISOString();
     const monthAgo = new Date(now - 30 * 86400_000).toISOString();
     const todayStart = new Date(new Date().toISOString().slice(0, 10)).toISOString();
 
-    const [{ data: profiles }, { data: guests }, { data: searches }, { data: history }] =
+    const [{ data: profiles }, { data: sessions }, { data: searches }, { data: history }] =
       await Promise.all([
-        supabaseAdmin.from("profiles").select("id, created_at, last_login_at, report_count"),
-        supabaseAdmin.from("guest_events").select("anon_id, event, created_at").limit(10000),
+        supabaseAdmin
+          .from("profiles")
+          .select("id, created_at, last_sign_in_at, last_active_at, status, search_count, report_count"),
+        supabaseAdmin.from("user_sessions").select("user_id, started_at, last_seen_at, duration_seconds, ended_at").limit(20000),
         supabaseAdmin.from("search_analytics").select("query, user_id, created_at").limit(10000),
         supabaseAdmin.from("search_history").select("products").limit(5000),
       ]);
 
     const p = profiles ?? [];
-    const g = guests ?? [];
+    const ss = sessions ?? [];
     const s = searches ?? [];
-    const uniqGuests = new Set(g.map((r: any) => r.anon_id)).size;
-    const dau = new Set([
-      ...p.filter((r: any) => r.last_login_at >= dayAgo).map((r: any) => r.id),
-      ...g.filter((r: any) => r.created_at >= dayAgo).map((r: any) => r.anon_id),
-    ]).size;
-    const mau = new Set([
-      ...p.filter((r: any) => r.last_login_at >= monthAgo).map((r: any) => r.id),
-      ...g.filter((r: any) => r.created_at >= monthAgo).map((r: any) => r.anon_id),
-    ]).size;
+
+    const activeUsers = (from: string) =>
+      new Set([
+        ...p.filter((r: any) => r.last_active_at >= from || r.last_sign_in_at >= from).map((r: any) => r.id),
+        ...ss.filter((r: any) => r.last_seen_at >= from).map((r: any) => r.user_id),
+      ]).size;
+
+    const endedSessions = ss.filter((r: any) => r.ended_at !== null || (r.last_seen_at && now - new Date(r.last_seen_at).getTime() > 30 * 60 * 1000));
+    const totalDuration = endedSessions.reduce(
+      (sum: number, r: any) =>
+        sum +
+        (r.duration_seconds ?? Math.max(0, Math.min(8 * 3600, Math.round((Math.min(now, new Date(r.last_seen_at).getTime()) - new Date(r.started_at).getTime()) / 1000)))),
+      0,
+    );
 
     const byQuery = new Map<string, number>();
     s.forEach((r: any) => {
@@ -590,21 +668,31 @@ export const userAnalytics = createServerFn({ method: "GET" })
       (r.products ?? []).forEach((n: string) => byProduct.set(n, (byProduct.get(n) ?? 0) + 1)),
     );
 
-    const totalReports =
-      p.reduce((sum: number, r: any) => sum + (r.report_count ?? 0), 0) +
-      g.filter((r: any) => r.event === "report").length;
-    const totalUsers = p.length + uniqGuests;
+    const totalReports = p.reduce((sum: number, r: any) => sum + (r.report_count ?? 0), 0);
+    const totalUsers = p.length;
+    const completed = endedSessions.length;
+    const registered = p.filter((r: any) => r.status === "active").length;
+    const suspended = p.length - p.filter((r: any) => r.status === "active").length;
 
     return {
-      totalGuests: uniqGuests,
+      totalGuests: 0,
       totalRegistered: p.length,
+      activeRegistered: registered,
+      suspended,
       newToday: p.filter((r: any) => r.created_at >= todayStart).length,
-      dau,
-      mau,
+      newWeek: p.filter((r: any) => r.created_at >= weekAgo).length,
+      newMonth: p.filter((r: any) => r.created_at >= monthAgo).length,
+      dau: activeUsers(dayAgo),
+      wau: activeUsers(weekAgo),
+      mau: activeUsers(monthAgo),
       totalSearches: s.length,
       avgSearchesPerUser: totalUsers ? +(s.length / totalUsers).toFixed(1) : 0,
       avgReportsPerUser: totalUsers ? +(totalReports / totalUsers).toFixed(1) : 0,
       totalReports,
+      totalSessions: ss.length,
+      activeSessions: ss.filter((r: any) => r.ended_at === null && r.last_seen_at && now - new Date(r.last_seen_at).getTime() <= 30 * 60 * 1000).length,
+      avgSessionSeconds: completed ? Math.round(totalDuration / completed) : 0,
+      totalUsageSeconds: totalDuration,
       topComplaints: [...byQuery.entries()]
         .map(([query, count]) => ({ query, count }))
         .sort((a, b) => b.count - a.count)

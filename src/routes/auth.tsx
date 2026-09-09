@@ -1,12 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, Mail } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — AMS" }] }),
@@ -21,43 +21,124 @@ function safeNext(next: string): string {
   return next;
 }
 
+const RESEND_COOLDOWN_S = 60;
+
 function AuthPage() {
-  
   const { next } = Route.useSearch();
   const dest = safeNext(next || "/");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+
+  const [step, setStep] = useState<"email" | "otp">("email");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [resendIn, setResendIn] = useState(0);
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) window.location.href = dest;
-    });
+    return () => {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+    };
+  }, []);
+
+  function startResendCountdown() {
+    setResendIn(RESEND_COOLDOWN_S);
+    if (timerRef.current) window.clearInterval(timerRef.current);
+    timerRef.current = window.setInterval(() => {
+      setResendIn((s) => {
+        if (s <= 1) {
+          if (timerRef.current) window.clearInterval(timerRef.current);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  }
+
+  /** Handle magic-link / exchange callbacks appended to the URL. */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const params = new URLSearchParams(window.location.search);
+      const oauthOk = params.get("next");
+      const hasOAuthFlow = window.location.hash.length > 0 || oauthOk !== null;
+      // On a fresh page load with a valid session, go straight to the app.
+      if (!hasOAuthFlow) {
+        const { data } = await supabase.auth.getUser();
+        if (!cancelled && data.user) {
+          window.location.href = dest;
+          return;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [dest]);
 
-  async function onSubmit(e: React.FormEvent) {
+  /** Exchange code / token_hash params (magic-link click or expired-link state). */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const tokenHash = params.get("token_hash");
+    const err = params.get("error");
+    if (err) {
+      setError(decodeURIComponent(params.get("error_description") ?? "Sign in failed. Please try again."));
+    }
+    if (code) {
+      setLoading(true);
+      supabase.auth
+        .exchangeCodeForSession(code)
+        .then(({ error }) => {
+          if (error) {
+            setError("This verification link is invalid or has expired. Please request a new code below.");
+            setLoading(false);
+            return;
+          }
+          redirectAfterAuth(dest);
+        })
+        .catch(() => {
+          setError("This verification link is invalid or has expired. Please request a new code below.");
+          setLoading(false);
+        });
+    } else if (tokenHash) {
+      setLoading(true);
+      supabase.auth
+        .verifyOtp({ token_hash: tokenHash, type: "magiclink" })
+        .then(({ error }) => {
+          if (error) {
+            setError("This verification link is invalid or has expired. Please request a new code below.");
+            setLoading(false);
+            return;
+          }
+          redirectAfterAuth(dest);
+        })
+        .catch(() => {
+          setError("This verification link is invalid or has expired. Please request a new code below.");
+          setLoading(false);
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function onRequestCode(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setInfo(null);
     setLoading(true);
     try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: `${window.location.origin}${dest}` },
-        });
-        if (error) throw error;
-        setInfo("Check your email to confirm your account, then sign in.");
-        setMode("signin");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        window.location.href = dest;
-      }
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth${dest !== "/" ? `?next=${encodeURIComponent(dest)}` : ""}`,
+        },
+      });
+      if (error) throw error;
+      // Generic message — never reveals whether an account exists.
+      setInfo("If an account exists for this address, a sign-in code is on its way. Check your inbox (and spam folder).");
+      setStep("otp");
+      startResendCountdown();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -65,12 +146,56 @@ function AuthPage() {
     }
   }
 
+  async function onVerifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: otp.replace(/\s/g, ""),
+        type: "email",
+      });
+      if (error) throw error;
+      // Account-level check (suspended / deleted).
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("status")
+        .eq("id", (await supabase.auth.getUser()).data.user?.id ?? "")
+        .maybeSingle();
+      if (profile && profile.status !== "active") {
+        await supabase.auth.signOut();
+        setError("Your account is currently suspended. Contact your administrator for access.");
+        setLoading(false);
+        return;
+      }
+      window.location.href = dest;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      if (/expired|invalid|token/i.test(msg)) {
+        setError("That code is invalid or has expired. Request a new one below.");
+      } else {
+        setError(msg);
+      }
+      setLoading(false);
+    }
+  }
+
   async function onGoogle() {
     setError(null);
+    setInfo(null);
     const result = await lovable.auth.signInWithOAuth("google", {
       redirect_uri: `${window.location.origin}/auth${dest !== "/" ? `?next=${encodeURIComponent(dest)}` : ""}`,
     });
     if (result.error) setError(result.error.message ?? "Google sign-in failed");
+  }
+
+  function backToEmail() {
+    setStep("email");
+    setError(null);
+    setInfo(null);
+    setOtp("");
   }
 
   return (
@@ -81,12 +206,12 @@ function AuthPage() {
           <div>
             <h1 className="text-lg font-semibold">AMS Clinical Reference</h1>
             <p className="text-sm text-muted-foreground">
-              {mode === "signin" ? "Sign in to continue" : "Create an account"}
+              Sign in to access the clinical decision-support application
             </p>
           </div>
         </div>
 
-        <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>
+        <Button type="button" variant="outline" className="w-full" onClick={onGoogle} disabled={loading}>
           Continue with Google
         </Button>
         <p className="mt-2 mb-4 text-[11px] leading-relaxed text-muted-foreground">
@@ -94,72 +219,107 @@ function AuthPage() {
           to personalise your experience and improve the app — your information is never shared with
           third parties and never used for marketing without your explicit consent.
         </p>
-        <p className="mb-4 text-[11px] text-muted-foreground">
-          You can also{" "}
-          <Link to="/" className="text-primary hover:underline">
-            continue as a guest
-          </Link>{" "}
-          — search, reports and references stay free without an account.
-        </p>
 
         <div className="relative my-4 text-center">
           <span className="text-xs uppercase tracking-wide text-muted-foreground bg-background px-2">
-            or with email
+            or use a sign-in code
           </span>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-            />
-          </div>
-          <div>
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={6}
-              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-            />
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {info && <p className="text-sm text-muted-foreground">{info}</p>}
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {mode === "signin" ? "Sign in" : "Create account"}
-          </Button>
-        </form>
+        {step === "email" ? (
+          <form onSubmit={onRequestCode} className="space-y-4">
+            <div>
+              <Label htmlFor="email">Work email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                placeholder="you@organisation.com"
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            {info && <p className="text-sm text-muted-foreground">{info}</p>}
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              We'll email you a one-time sign-in code. No password required.
+            </p>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Mail className="mr-2 h-4 w-4" />
+              Send me a sign-in code
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={onVerifyCode} className="space-y-4">
+            <div>
+              <Label htmlFor="otp">Sign-in code</Label>
+              <Input
+                id="otp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                required
+                maxLength={8}
+                placeholder="6-digit code"
+                className="tracking-[0.3em] text-center text-lg"
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            {info && <p className="text-sm text-muted-foreground">{info}</p>}
+            <div className="flex items-center justify-between gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={backToEmail}
+                disabled={loading}
+              >
+                ← Change email
+              </Button>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                disabled={loading || resendIn > 0}
+                onClick={() => {
+                  setError(null);
+                  setInfo(null);
+                  onRequestCode(new Event("submit") as any);
+                }}
+              >
+                {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}
+              </Button>
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Verify &amp; sign in
+            </Button>
+          </form>
+        )}
 
-        <p className="mt-6 text-sm text-center text-muted-foreground">
-          {mode === "signin" ? "New here?" : "Have an account?"}{" "}
-          <button
-            type="button"
-            className="text-primary underline-offset-4 hover:underline"
-            onClick={() => {
-              setMode(mode === "signin" ? "signup" : "signin");
-              setError(null);
-              setInfo(null);
-            }}
-          >
-            {mode === "signin" ? "Create one" : "Sign in"}
-          </button>
-        </p>
-        <p className="mt-4 text-xs text-center">
-          <Link to="/" className="text-muted-foreground hover:text-foreground">
-            ← Back to search
-          </Link>
+        <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground">
+          Sign-in is restricted to authorised users. We record basic session activity (when you sign
+          in/out and which articles you open) to keep the service secure and to improve it. We never
+          sell or share your personal data.
         </p>
       </Card>
     </div>
   );
+}
+
+async function redirectAfterAuth(dest: string) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("status")
+    .eq("id", (await supabase.auth.getUser()).data.user?.id ?? "")
+    .maybeSingle();
+  if (profile && profile.status !== "active") {
+    await supabase.auth.signOut();
+    window.location.href = "/auth";
+    return;
+  }
+  window.location.href = dest;
 }

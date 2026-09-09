@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -34,7 +34,7 @@ import { matchProducts, loadComplaintEmbeddings, type ProductMatch } from "@/lib
 import { embedQuery } from "@/lib/embed.functions";
 import { summarizeProductReport } from "@/lib/product-report.functions";
 import { searchLiterature, type LiteratureItem } from "@/lib/literature.functions";
-import { logSearch, recordGuestEvent } from "@/lib/analytics.functions";
+import { logSearch } from "@/lib/analytics.functions";
 import {
   touchProfile,
   saveSearchHistory,
@@ -42,11 +42,11 @@ import {
   toggleFavorite,
   listFavorites,
 } from "@/lib/profile.functions";
-import { WelcomeBanner } from "@/components/WelcomeBanner";
-import { getAnonId } from "@/lib/guest";
 import { track, startNewSession } from "@/lib/activity";
 import { normalizeComplaint } from "@/lib/activity-privacy";
 import { isAdmin as isAdminFn } from "@/lib/admin.functions";
+import { completeSignOut } from "@/lib/auth-actions";
+import { useSessionTracker } from "@/lib/session";
 import { supabase } from "@/integrations/supabase/client";
 import { getProductImage } from "@/data/product-images";
 
@@ -121,7 +121,6 @@ function Index() {
   const literatureFn = useServerFn(searchLiterature);
   const logFn = useServerFn(logSearch);
   const isAdminServer = useServerFn(isAdminFn);
-  const guestEventFn = useServerFn(recordGuestEvent);
   const touchProfileFn = useServerFn(touchProfile);
   const saveHistoryFn = useServerFn(saveSearchHistory);
   const attachReportFn = useServerFn(attachReportToHistory);
@@ -143,6 +142,16 @@ function Index() {
   const [isAdmin, setIsAdmin] = useState(false);
   const seqRef = useRef(0);
   const lastLoggedRef = useRef<string>("");
+  const navigate = useNavigate();
+
+  function pickComplaint(q: string) {
+    if (session) {
+      setQuery(q);
+      track({ event_type: "complaint_shortcut_selected", complaint_raw: q });
+    } else {
+      navigate({ to: "/auth", search: { next: authNext(q) } });
+    }
+  }
 
   useEffect(() => {
     const apply = (user: { email?: string | null; user_metadata?: Record<string, any> } | null) => {
@@ -168,7 +177,6 @@ function Index() {
     };
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) apply(data.user as any);
-      else guestEventFn({ data: { anon_id: getAnonId(), event: "visit" } }).catch(() => {});
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
@@ -181,7 +189,9 @@ function Index() {
       }
     });
     return () => sub.subscription.unsubscribe();
-  }, [isAdminServer, touchProfileFn, listFavoritesFn, guestEventFn]);
+  }, [isAdminServer, touchProfileFn, listFavoritesFn]);
+
+  useSessionTracker(!!session);
 
   // Preload both embedding matrices
   useEffect(() => {
@@ -226,7 +236,7 @@ function Index() {
   // Fetch recent literature for the complaint (cached server-side)
   useEffect(() => {
     const q = query.trim();
-    if (!q || !useLiterature || matches.length === 0) {
+    if (!q || !useLiterature || !session || matches.length === 0) {
       setLiterature([]);
       return;
     }
@@ -248,9 +258,9 @@ function Index() {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [query, useLiterature, matches.length, literatureFn]);
+  }, [query, useLiterature, matches.length, session, literatureFn]);
 
-  // Analytics (guests included) + persistent history for registered users
+  // Analytics (registered users only) + persistent search history
   useEffect(() => {
     const q = query.trim();
     if (!q || q.length < 2) return;
@@ -258,12 +268,15 @@ function Index() {
       const key = `${q}|${matches.length}`;
       if (lastLoggedRef.current === key) return;
       lastLoggedRef.current = key;
+      if (!session) {
+        historyIdRef.current = null;
+        return;
+      }
       logFn({
         data: {
           query: q,
           result_count: matches.length,
           mode: qVec ? "hybrid" : "keyword",
-          anon_id: session ? undefined : getAnonId(),
         },
       }).catch(() => {});
       // Governance/analytics only — never influences ranking or recommendations.
@@ -272,21 +285,17 @@ function Index() {
       if (matches.length === 0) {
         track({ event_type: "search_no_result", complaint_id: complaint, result_count: 0 });
       }
-      if (session) {
-        saveHistoryFn({
-          data: {
-            query: q,
-            products: matches.map((m) => m.product),
-            result_count: matches.length,
-          },
+      saveHistoryFn({
+        data: {
+          query: q,
+          products: matches.map((m) => m.product),
+          result_count: matches.length,
+        },
+      })
+        .then(({ id }) => {
+          historyIdRef.current = id;
         })
-          .then(({ id }) => {
-            historyIdRef.current = id;
-          })
-          .catch(() => {});
-      } else {
-        historyIdRef.current = null;
-      }
+        .catch(() => {});
     }, 1200);
     return () => clearTimeout(handle);
   }, [query, matches, qVec, logFn, session, saveHistoryFn]);
@@ -371,8 +380,6 @@ function Index() {
           data: { id: historyIdRef.current, report_markdown: markdown.slice(0, 60000) },
         }).catch(() => {});
         track({ event_type: "report_saved", report_id: historyIdRef.current });
-      } else if (!session) {
-        guestEventFn({ data: { anon_id: getAnonId(), event: "report" } }).catch(() => {});
       }
     } catch (e) {
       setReportError(e instanceof Error ? e.message : "Failed to generate report");
@@ -391,13 +398,12 @@ function Index() {
       qVec={qVec}
       embedding={embedding}
       large={!hasQuery}
+      onSubmit={() => pickComplaint(query)}
     />
   );
 
   return (
     <div className="min-h-screen bg-background">
-      <WelcomeBanner signedIn={!!session} />
-
       <header className="sticky top-0 z-30 border-b border-border/70 bg-card/85 backdrop-blur-md print:hidden">
         <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:px-6">
           <button
@@ -455,12 +461,7 @@ function Index() {
                   variant="ghost"
                   size="sm"
                   className="rounded-full"
-                  onClick={async () => {
-                    await supabase.auth.signOut();
-                    setSession(null);
-                    setIsAdmin(false);
-                    setFavorites(new Set());
-                  }}
+                  onClick={completeSignOut}
                   title={session.email}
                 >
                   <LogOut className="h-4 w-4 sm:mr-1" />
@@ -501,7 +502,10 @@ function Index() {
               <input
                 type="checkbox"
                 checked={useLiterature}
-                onChange={(e) => setUseLiterature(e.target.checked)}
+                onChange={(e) => {
+                  setUseLiterature(e.target.checked);
+                  if (session) track({ event_type: "recent_literature_enabled_or_disabled" });
+                }}
                 className="h-4 w-4 accent-primary"
               />
               <span className="font-medium text-foreground">Include recent literature</span>
@@ -520,7 +524,7 @@ function Index() {
                 <button
                   key={s.label}
                   type="button"
-                  onClick={() => setQuery(s.label)}
+                  onClick={() => pickComplaint(s.label)}
                   style={{ animationDelay: `${i * 35}ms` }}
                   className="surface-card hover-lift animate-fade-in group p-4 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
@@ -543,7 +547,7 @@ function Index() {
                 <button
                   key={c}
                   type="button"
-                  onClick={() => setQuery(c)}
+                  onClick={() => pickComplaint(c)}
                   className="rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:text-primary"
                 >
                   {c}
@@ -562,7 +566,10 @@ function Index() {
                   <input
                     type="checkbox"
                     checked={useLiterature}
-                    onChange={(e) => setUseLiterature(e.target.checked)}
+                    onChange={(e) => {
+                      setUseLiterature(e.target.checked);
+                      if (session) track({ event_type: "recent_literature_enabled_or_disabled" });
+                    }}
                     className="h-3.5 w-3.5 accent-primary"
                   />
                   <span className="font-medium text-foreground">Include recent literature</span>
@@ -571,7 +578,7 @@ function Index() {
                   <button
                     key={c}
                     type="button"
-                    onClick={() => setQuery(c)}
+                    onClick={() => pickComplaint(c)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                       query === c
                         ? "border-primary bg-primary text-primary-foreground"
@@ -586,7 +593,9 @@ function Index() {
           </div>
 
           <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-            {matches.length === 0 ? (
+            {!session ? (
+              <SignInGate nextPath={authNext(query)} />
+            ) : matches.length === 0 ? (
               embedding || !ready ? (
                 <LoadingPanel mode="search" />
               ) : (
@@ -745,6 +754,7 @@ function SearchBox({
   qVec,
   embedding,
   large,
+  onSubmit,
 }: {
   query: string;
   setQuery: (v: string) => void;
@@ -752,6 +762,7 @@ function SearchBox({
   qVec: Float32Array | null;
   embedding: boolean;
   large: boolean;
+  onSubmit?: () => void;
 }) {
   return (
     <div className="relative">
@@ -764,6 +775,9 @@ function SearchBox({
         autoFocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSubmit?.();
+        }}
         aria-label="Search by patient complaint, diagnosis, symptom, laboratory finding or product"
         placeholder="Search by patient complaint, diagnosis, symptom, laboratory finding or product..."
         className={`w-full rounded-full border border-border bg-card pl-11 text-foreground shadow-[var(--shadow-card)] outline-none transition-all placeholder:text-muted-foreground/80 focus:border-primary/40 focus:ring-4 focus:ring-ring/15 sm:pl-13 ${
@@ -856,6 +870,38 @@ function EmptyResults({ query }: { query: string }) {
         Nothing in the AMS indication database matches “{query.trim()}”. Try another complaint or
         use different keywords.
       </p>
+    </div>
+  );
+}
+
+/** Absolute path used as the /auth `next` target, preserving the chosen query. */
+function authNext(q: string): string {
+  const trimmed = q.trim();
+  return trimmed ? `/?q=${encodeURIComponent(trimmed)}` : "/";
+}
+
+function SignInGate({ nextPath }: { nextPath: string }) {
+  return (
+    <div className="surface-card animate-fade-in p-12 text-center">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary/10">
+        <ShieldCheck className="h-6 w-6 text-primary" />
+      </div>
+      <h2 className="mt-5 text-lg font-semibold text-foreground">
+        Sign in to view recommendations
+      </h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+        Matched AMS products, official indications and the clinical evidence report are only
+        available to authorised users. Sign in to continue — no password needed, we email you a
+        one-time code.
+      </p>
+      <div className="mt-6 flex justify-center">
+        <Link to="/auth" search={{ next: nextPath }}>
+          <Button className="gap-2 rounded-full">
+            <LogIn className="h-4 w-4" />
+            Sign in to continue
+          </Button>
+        </Link>
+      </div>
     </div>
   );
 }

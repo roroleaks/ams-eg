@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { getOptionalCaller, publicClient } from "@/lib/ai-guard.server";
 import {
   roleFor,
   countBy,
@@ -37,17 +36,15 @@ async function requireAdmin(context: { supabase: any; userId: string }) {
 /* ---------------- Recording (never blocks or breaks the clinical flow) ---------------- */
 
 export const recordActivity = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => EventInput.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     try {
-      const caller = await getOptionalCaller();
-      const client = caller.supabase ?? publicClient();
       const category = CATEGORY_OF[data.event_type];
       if (!category) return { ok: true };
-      const role =
-        caller.supabase && caller.userId ? await roleFor(caller.supabase, caller.userId) : "guest";
-      await client.from("activity_events").insert({
-        user_id: caller.userId,
+      const role = await roleFor(context.supabase, context.userId);
+      await context.supabase.from("activity_events").insert({
+        user_id: context.userId,
         user_role: role,
         organization: scrubIdentifier(data.organization ?? null, 120),
         session_id: data.session_id ?? null,

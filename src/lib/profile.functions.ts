@@ -4,20 +4,24 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { bumpCounter } from "@/lib/profile.server";
 import { HistoryInput, FavInput } from "@/lib/profile.schemas";
 
-/** Creates the profile on first sign-in and refreshes last_login_at afterwards. */
+/** Creates the profile on first sign-in and refreshes sign-in timestamps afterwards. */
 export const touchProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const claims = context.claims as Record<string, any>;
     const meta = (claims.user_metadata ?? {}) as Record<string, any>;
+    const now = new Date().toISOString();
     const patch = {
       id: context.userId,
       email: (claims.email as string) ?? null,
       full_name: meta.full_name ?? meta.name ?? null,
+      display_name: meta.full_name ?? meta.name ?? meta.email ?? null,
       avatar_url: meta.avatar_url ?? meta.picture ?? null,
       provider: (claims.app_metadata as any)?.provider ?? null,
       provider_account_id: meta.sub ?? meta.provider_id ?? null,
-      last_login_at: new Date().toISOString(),
+      last_login_at: now,
+      last_sign_in_at: now,
+      last_active_at: now,
     };
     const { data, error } = await context.supabase
       .from("profiles")

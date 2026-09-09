@@ -42,6 +42,9 @@ import {
   Activity,
   BarChart3,
   UserCircle2,
+  LayoutDashboard,
+  Ban,
+  CircleCheck,
 } from "lucide-react";
 import {
   listDocuments,
@@ -52,6 +55,7 @@ import {
   listUsers,
   setUserRole,
   setUserPermissions,
+  setUserStatus,
   deleteUser,
   listIndexingLogs,
   listSearchAnalytics,
@@ -61,6 +65,9 @@ import {
   userAnalytics,
   exportRegisteredUsers,
 } from "@/lib/admin.functions";
+import { sessionOverview } from "@/lib/session.functions";
+import { completeSignOut } from "@/lib/auth-actions";
+import { useSessionTracker } from "@/lib/session";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Admin — AMS" }] }),
@@ -72,6 +79,7 @@ function AdminPage() {
   const isAdminServer = useServerFn(isAdminFn);
   const [ready, setReady] = useState(false);
   const [allowed, setAllowed] = useState(false);
+  useSessionTracker(true);
 
   useEffect(() => {
     isAdminServer()
@@ -113,7 +121,7 @@ function AdminPage() {
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
+    await completeSignOut();
     navigate({ to: "/auth", replace: true });
   }
 
@@ -142,8 +150,11 @@ function AdminPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        <Tabs defaultValue="documents">
+        <Tabs defaultValue="overview">
           <TabsList className="mb-6">
+            <TabsTrigger value="overview">
+              <LayoutDashboard className="h-4 w-4 mr-1" /> Overview
+            </TabsTrigger>
             <TabsTrigger value="documents">
               <FileText className="h-4 w-4 mr-1" /> Documents
             </TabsTrigger>
@@ -167,6 +178,9 @@ function AdminPage() {
             </TabsTrigger>
           </TabsList>
 
+          <TabsContent value="overview">
+            <OverviewTab />
+          </TabsContent>
           <TabsContent value="documents">
             <DocumentsTab />
           </TabsContent>
@@ -190,6 +204,59 @@ function AdminPage() {
           </TabsContent>
         </Tabs>
       </main>
+    </div>
+  );
+}
+
+// ============ Overview Tab ============
+
+function fmtDuration(seconds: number): string {
+  if (seconds <= 0) return "0m";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function OverviewTab() {
+  const sessionFn = useServerFn(sessionOverview);
+  const statsFn = useServerFn(userAnalytics);
+  const sessions = useQuery({ queryKey: ["overview-sessions"], queryFn: () => sessionFn() });
+  const stats = useQuery({ queryKey: ["overview-users"], queryFn: () => statsFn() });
+
+  const s = sessions.data;
+  const u = stats.data;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Total users" value={u?.totalRegistered ?? "—"} />
+        <Stat label="New (7 days)" value={u?.newWeek ?? "—"} />
+        <Stat label="New (30 days)" value={u?.newMonth ?? "—"} />
+        <Stat label="Active today" value={u?.dau ?? "—"} />
+        <Stat label="Active (7 days)" value={u?.wau ?? "—"} />
+        <Stat label="Active (30 days)" value={u?.mau ?? "—"} />
+        <Stat label="Total sessions" value={s?.totals.totalSessions ?? "—"} />
+        <Stat label="Live sessions" value={s?.totals.activeSessions ?? "—"} />
+        <Stat label="Sessions today" value={s?.totals.sessionsToday ?? "—"} />
+        <Stat
+          label="Avg session duration"
+          value={u?.avgSessionSeconds != null ? fmtDuration(u.avgSessionSeconds) : "—"}
+        />
+        <Stat
+          label="Total usage time"
+          value={u?.totalUsageSeconds != null ? fmtDuration(u.totalUsageSeconds) : "—"}
+        />
+        <Stat label="Suspended accounts" value={u?.suspended ?? "—"} />
+      </div>
+
+      <Card className="p-4">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Sessions are recorded per sign-in with heartbeats every ~45 seconds while the tab is
+          visible. Heartbeats pause when the tab is hidden and sessions are pruned automatically
+          after 30 minutes of inactivity. Durations are computed server-side.
+        </p>
+      </Card>
     </div>
   );
 }
@@ -457,6 +524,7 @@ function UsersTab() {
   const listFn = useServerFn(listUsers);
   const roleFn = useServerFn(setUserRole);
   const permsFn = useServerFn(setUserPermissions);
+  const statusFn = useServerFn(setUserStatus);
   const delFn = useServerFn(deleteUser);
   const { data, isLoading } = useQuery({ queryKey: ["admin-users"], queryFn: () => listFn() });
   const [editingUser, setEditingUser] = useState<any | null>(null);
@@ -470,6 +538,13 @@ function UsersTab() {
   async function onDelete(u: any) {
     if (!confirm(`Delete user ${u.email}? This cannot be undone.`)) return;
     await delFn({ data: { user_id: u.id } });
+    qc.invalidateQueries({ queryKey: ["admin-users"] });
+  }
+
+  async function onSuspend(u: any, status: "active" | "suspended") {
+    if (!confirm(`Set account ${u.email} to "${status}"? They will be blocked from signing in immediately.`))
+      return;
+    await statusFn({ data: { user_id: u.id, status } });
     qc.invalidateQueries({ queryKey: ["admin-users"] });
   }
 
@@ -546,6 +621,15 @@ function UsersTab() {
                   <div className="flex justify-end gap-1">
                     <Button size="sm" variant="ghost" onClick={() => setEditingUser(u)}>
                       Permissions
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive"
+                      onClick={() => onSuspend(u, "suspended")}
+                      title="Suspend this user"
+                    >
+                      <Ban className="h-3 w-3" />
                     </Button>
                     <Button
                       size="sm"
@@ -862,6 +946,8 @@ function RegisteredUsersTab() {
   const listFn = useServerFn(listRegisteredUsers);
   const statsFn = useServerFn(userAnalytics);
   const exportFn = useServerFn(exportRegisteredUsers);
+  const statusFn = useServerFn(setUserStatus);
+  const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ["registered-users"],
@@ -879,20 +965,30 @@ function RegisteredUsersTab() {
     URL.revokeObjectURL(url);
   }
 
+  async function onSuspend(u: any) {
+    const next = u.status === "suspended" ? "active" : "suspended";
+    const action = next === "suspended" ? "suspend" : "reactivate";
+    if (!confirm(`${action[0].toUpperCase() + action.slice(1)} account ${u.email}?`)) return;
+    await statusFn({ data: { user_id: u.id, status: next } });
+    qc.invalidateQueries({ queryKey: ["registered-users"] });
+    qc.invalidateQueries({ queryKey: ["user-analytics"] });
+  }
+
   const s = stats.data;
 
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Stat label="Total guests" value={s?.totalGuests ?? "—"} />
         <Stat label="Registered users" value={s?.totalRegistered ?? "—"} />
+        <Stat label="Active accounts" value={s?.activeRegistered ?? "—"} />
+        <Stat label="Suspended" value={s?.suspended ?? "—"} />
         <Stat label="New today" value={s?.newToday ?? "—"} />
+        <Stat label="New (7 days)" value={s?.newWeek ?? "—"} />
         <Stat label="Daily active" value={s?.dau ?? "—"} />
+        <Stat label="Weekly active" value={s?.wau ?? "—"} />
         <Stat label="Monthly active" value={s?.mau ?? "—"} />
+        <Stat label="Avg session" value={s?.avgSessionSeconds != null ? `${Math.round(s.avgSessionSeconds / 60)}m` : "—"} />
         <Stat label="Total searches" value={s?.totalSearches ?? "—"} />
-        <Stat label="Avg searches / user" value={s?.avgSearchesPerUser ?? "—"} />
-        <Stat label="Reports generated" value={s?.totalReports ?? "—"} />
-        <Stat label="Avg reports / user" value={s?.avgReportsPerUser ?? "—"} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -947,11 +1043,11 @@ function RegisteredUsersTab() {
                   <TableHead>User</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Registered</TableHead>
-                  <TableHead>Last login</TableHead>
+                  <TableHead>Last active</TableHead>
                   <TableHead>Searches</TableHead>
                   <TableHead>Reports</TableHead>
-                  <TableHead>Favourites</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -966,7 +1062,14 @@ function RegisteredUsersTab() {
                             {(u.full_name ?? u.email ?? "?").slice(0, 1).toUpperCase()}
                           </div>
                         )}
-                        <span className="text-sm">{u.full_name ?? "—"}</span>
+                        <span className="text-sm">
+                          {u.display_name ?? u.full_name ?? "—"}
+                          {u.roles.includes("admin") && (
+                            <Badge variant="outline" className="ml-1 text-[9px]">
+                              admin
+                            </Badge>
+                          )}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm">{u.email ?? "—"}</TableCell>
@@ -974,17 +1077,47 @@ function RegisteredUsersTab() {
                       {new Date(u.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="text-xs">
-                      {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "—"}
+                      {u.last_active_at
+                        ? new Date(u.last_active_at).toLocaleString()
+                        : u.last_login_at
+                          ? new Date(u.last_login_at).toLocaleString()
+                          : "—"}
                     </TableCell>
                     <TableCell>{u.search_count}</TableCell>
                     <TableCell>{u.report_count}</TableCell>
-                    <TableCell className="max-w-[220px] text-xs">
-                      {u.favorites.length ? u.favorites.join(", ") : "—"}
-                    </TableCell>
                     <TableCell>
-                      <Badge variant={u.roles.includes("admin") ? "default" : "secondary"}>
-                        {u.roles.includes("admin") ? "Admin" : u.status}
+                      <Badge
+                        variant="outline"
+                        className={
+                          u.status === "suspended"
+                            ? "bg-red-500/10 text-red-700"
+                            : u.status === "deleted"
+                              ? "bg-muted text-muted-foreground"
+                              : "bg-green-500/10 text-green-700"
+                        }
+                      >
+                        {u.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {u.status === "active" ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          onClick={() => onSuspend(u)}
+                        >
+                          <Ban className="h-3 w-3 mr-1" /> Suspend
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onSuspend(u)}
+                        >
+                          <CircleCheck className="h-3 w-3 mr-1" /> Reactivate
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
