@@ -19,6 +19,7 @@ export function SignInPanel({
   onSuccess,
   showClose = false,
   onClose,
+  mode = "signin",
 }: {
   /** Same-origin destination to resume to after auth (page mode). */
   next?: string;
@@ -27,6 +28,8 @@ export function SignInPanel({
   /** Render a close/cancel control (modal mode). */
   showClose?: boolean;
   onClose?: () => void;
+  /** "signin" = existing user; "create" = new account via verification link. */
+  mode?: "signin" | "create";
 }) {
   const [step, setStep] = useState<"email" | "sent">("email");
   const [email, setEmail] = useState<string>(
@@ -195,7 +198,9 @@ export function SignInPanel({
       if (error) throw error;
       // Generic message — never reveals whether an account exists.
       setInfo(
-        "If an account exists for this address, you'll get a link in the mail. Click it to sign straight in.",
+        mode === "create"
+          ? "If this email already has an account, you'll be signed in. If it's new, a user account will be created after you verify."
+          : "If an account exists for this address, you'll get a link in the mail. Click it to sign straight in.",
       );
       setStep("sent");
       startResendCountdown();
@@ -232,6 +237,15 @@ export function SignInPanel({
     setRemembered(null);
     setEmail("");
   }
+
+  const sentHeadline =
+    mode === "create" ? "Check your inbox to verify" : "Check your inbox";
+  const sentBodyStart =
+    mode === "create" ? "A verification link was sent to " : "A secure sign-in link was sent to ";
+  const sentBodyEnd =
+    mode === "create"
+      ? ". Click it to confirm your email and create your account."
+      : ". Click it in the mail and you'll be signed straight in.";
 
   return (
     <div>
@@ -280,6 +294,9 @@ export function SignInPanel({
 
       {step === "email" ? (
         <form onSubmit={onRequestCode} className="space-y-4">
+          <p className="text-sm font-semibold text-foreground">
+            {mode === "create" ? "New to AMS?" : "Already have an account?"}
+          </p>
           <div>
             <Label htmlFor="signin-email">Work email</Label>
             <Input
@@ -304,12 +321,14 @@ export function SignInPanel({
           {error && <p className="text-sm text-destructive">{error}</p>}
           {info && <p className="text-sm text-muted-foreground">{info}</p>}
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            We'll email you a secure sign-in link. No password required.
+            {mode === "create"
+              ? "We will verify your email before creating your account."
+              : "We will send a secure login link to your email. No password is required."}
           </p>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             <Mail className="mr-2 h-4 w-4" />
-            Send me a login link
+            {mode === "create" ? "Create account" : "Send me a sign-in link"}
           </Button>
         </form>
       ) : (
@@ -318,11 +337,11 @@ export function SignInPanel({
             <Mail className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <p className="font-semibold text-foreground">Check your inbox</p>
+            <p className="font-semibold text-foreground">{sentHeadline}</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              A secure sign-in link was sent to <span className="font-medium">{email}</span>. Click it
-              in the mail and you'll be signed straight in. If it doesn't arrive, check your spam
-              folder.
+              {sentBodyStart}
+              <span className="font-medium">{email}</span>
+              {sentBodyEnd} If it doesn't arrive, check your spam folder.
             </p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}

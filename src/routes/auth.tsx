@@ -37,6 +37,7 @@ function AuthPage() {
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
   const [confirmAction, setConfirmAction] = useState<null | "switch" | "signout">(null);
+  const [tab, setTab] = useState<"signin" | "create">("signin");
 
   // Restore an existing session first — never flash the sign-in form when a
   // saved session exists. Skipped when a callback is present (panel handles).
@@ -145,7 +146,34 @@ function AuthPage() {
             Your session expired. Please sign in again.
           </p>
         )}
-        <SignInPanel next={dest} />
+        <h1 className="mb-4 text-center text-lg font-semibold text-foreground">
+          Sign in or create an AMS account
+        </h1>
+        <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-muted/40 p-1">
+          <button
+            type="button"
+            onClick={() => setTab("signin")}
+            className={`rounded-lg py-2 text-sm font-medium transition-colors ${
+              tab === "signin"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("create")}
+            className={`rounded-lg py-2 text-sm font-medium transition-colors ${
+              tab === "create"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Create account
+          </button>
+        </div>
+        <SignInPanel next={dest} mode={tab} />
         <p className="mt-6 text-center">
           <Link
             to="/"
