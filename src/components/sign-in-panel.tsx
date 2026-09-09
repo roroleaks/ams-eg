@@ -12,7 +12,7 @@ const LAST_EMAIL_KEY = "ams_last_login_email";
 /**
  * Passwordless email sign-in flow (magic link). Used both as a full page
  * (route /auth) and inside the AuthGate modal. Sign-in always goes through
- * Supabase OTP magic-link verification via the emailed link.
+ * the Supabase emailed magic link.
  */
 export function SignInPanel({
   next = "/",
@@ -110,7 +110,6 @@ export function SignInPanel({
     (async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
-      const tokenHash = params.get("token_hash");
       const err = params.get("error");
       if (err) {
         setError(
@@ -123,29 +122,14 @@ export function SignInPanel({
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (!cancelled) {
           if (error) {
-            setError(
-              "This verification link is invalid or has expired. Please request a new code below.",
-            );
-            setLoading(false);
-          } else {
-            await finishAuthentication();
-          }
-        }
-      } else if (tokenHash) {
-        setLoading(true);
-        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "magiclink" });
-        if (!cancelled) {
-          if (error) {
-            setError(
-              "This verification link is invalid or has expired. Please request a new code below.",
-            );
+            setError(error.message || "This sign-in link is invalid or has expired. Please try again.");
             setLoading(false);
           } else {
             await finishAuthentication();
           }
         }
       } else {
-        // Magic-link / OAuth redirects can deliver the session as URL fragment
+        // Magic-link / OAuth redirects deliver the session as URL fragment
         // parameters (e.g. #access_token=...&refresh_token=...). We must NOT
         // clean the URL before this recovery runs, or sign-in fails silently.
         const { data } = await supabase.auth.getSession();
@@ -196,7 +180,8 @@ export function SignInPanel({
       const { error } = await supabase.auth.signInWithOtp({
         email: normalized,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth${
+          shouldCreateUser: true,
+          emailRedirectTo: `${window.location.origin}/auth/callback${
             next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
           }`,
         },
