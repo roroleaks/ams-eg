@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { isMissingRelationError } from "@/lib/db-errors";
 import {
   StartSessionInput,
   HeartbeatInput,
@@ -35,7 +36,12 @@ export const startUserSession = createServerFn({ method: "POST" })
       operating_system: data.operating_system ?? null,
       referrer: data.referrer ?? null,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      // Until the migration creates `user_sessions`, tracking is a no-op on
+      // purpose — never fail (or blank) the page because of it.
+      if (isMissingRelationError(error)) return { ok: true, degraded: true };
+      throw new Error(error.message);
+    }
     await context.supabase
       .from("profiles")
       .update({ last_active_at: now })
@@ -123,7 +129,28 @@ export const sessionOverview = createServerFn({ method: "GET" })
       .gte("started_at", since(Math.max(data.days, 30)))
       .order("started_at", { ascending: false })
       .limit(20000);
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (isMissingRelationError(error)) {
+        return {
+          totals: {
+            totalSessions: 0,
+            activeSessions: 0,
+            sessionsToday: 0,
+            sessionsWeek: 0,
+            sessionsMonth: 0,
+          },
+          usage: {
+            activeUsersToday: 0,
+            activeUsersWeek: 0,
+            activeUsersMonth: 0,
+            avgDurationSeconds: 0,
+            totalDurationSeconds: 0,
+          },
+          degraded: true,
+        };
+      }
+      throw new Error(error.message);
+    }
     const rows = (rowsRaw ?? []) as any[];
 
     const now = Date.now();
@@ -192,6 +219,9 @@ export const listUserSessions = createServerFn({ method: "POST" })
       .eq("user_id", data.user_id)
       .order("started_at", { ascending: false })
       .limit(data.limit);
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (isMissingRelationError(error)) return { sessions: [], degraded: true };
+      throw new Error(error.message);
+    }
     return { sessions: (rows ?? []) as any[] };
   });

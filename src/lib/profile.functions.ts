@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { bumpCounter } from "@/lib/profile.server";
+import { isMissingRelationError } from "@/lib/db-errors";
 import { HistoryInput, FavInput } from "@/lib/profile.schemas";
 
 /** Creates the profile on first sign-in and refreshes sign-in timestamps afterwards. */
@@ -32,12 +33,7 @@ export const touchProfile = createServerFn({ method: "POST" })
       .upsert(fullPatch, { onConflict: "id" })
       .select()
       .single();
-    if (
-      error &&
-      /(?:column .* does not exist|could not find the ['"][^'"]+['"] column of .*? in the schema cache)/i.test(
-        error.message ?? "",
-      )
-    ) {
+    if (error && isMissingRelationError(error)) {
       const minimal = {
         id: context.userId,
         email: fullPatch.email,
