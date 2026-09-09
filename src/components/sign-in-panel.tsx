@@ -27,9 +27,8 @@ export function SignInPanel({
   showClose?: boolean;
   onClose?: () => void;
 }) {
-  const [step, setStep] = useState<"email" | "otp">("email");
+  const [step, setStep] = useState<"email" | "sent">("email");
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -183,38 +182,13 @@ export function SignInPanel({
       if (error) throw error;
       // Generic message — never reveals whether an account exists.
       setInfo(
-        "If an account exists for this address, a sign-in code is on its way. Check your inbox (and spam folder).",
+        "If an account exists for this address, you'll get a link in the mail. Click it to sign straight in.",
       );
-      setStep("otp");
+      setStep("sent");
       startResendCountdown();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
-      setLoading(false);
-    }
-  }
-
-  async function onVerifyCode(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setInfo(null);
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.verifyOtp({
-        email,
-        token: otp.replace(/\s/g, ""),
-        type: "email",
-      });
-      if (error) throw error;
-      await finishAuthentication();
-      setStep("email");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Something went wrong";
-      if (/expired|invalid|token/i.test(msg)) {
-        setError("That code is invalid or has expired. Request a new one below.");
-      } else {
-        setError(msg);
-      }
       setLoading(false);
     }
   }
@@ -234,7 +208,6 @@ export function SignInPanel({
     setStep("email");
     setError(null);
     setInfo(null);
-    setOtp("");
   }
 
   return (
@@ -278,7 +251,7 @@ export function SignInPanel({
 
       <div className="relative my-4 text-center">
         <span className="bg-background px-2 text-xs uppercase tracking-wide text-muted-foreground">
-          or use a sign-in code
+          or sign in with your work email
         </span>
       </div>
 
@@ -299,36 +272,30 @@ export function SignInPanel({
           {error && <p className="text-sm text-destructive">{error}</p>}
           {info && <p className="text-sm text-muted-foreground">{info}</p>}
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            We'll email you a one-time sign-in code. No password required.
+            We'll email you a secure sign-in link. No password required.
           </p>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             <Mail className="mr-2 h-4 w-4" />
-            Send me a sign-in code
+            Send me a login link
           </Button>
         </form>
       ) : (
-        <form onSubmit={onVerifyCode} className="space-y-4">
+        <div className="space-y-4 rounded-lg border border-border/60 bg-muted/30 p-5 text-center">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-primary/10">
+            <Mail className="h-5 w-5 text-primary" />
+          </div>
           <div>
-            <Label htmlFor="signin-otp">Sign-in code</Label>
-            <Input
-              id="signin-otp"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              required
-              maxLength={8}
-              placeholder="6-digit code"
-              className="text-center text-lg tracking-[0.3em]"
-            />
+            <p className="font-semibold text-foreground">Check your inbox</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              A secure sign-in link was sent to <span className="font-medium">{email}</span>. Click it
+              in the mail and you'll be signed straight in. If it doesn't arrive, check your spam
+              folder.
+            </p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           {info && <p className="text-sm text-muted-foreground">{info}</p>}
-          <div className="flex items-center justify-between gap-3">
-            <Button type="button" variant="ghost" size="sm" onClick={backToEmail} disabled={loading}>
-              ← Change email
-            </Button>
+          <div className="flex items-center justify-center gap-3">
             <Button
               type="button"
               variant="link"
@@ -340,14 +307,13 @@ export function SignInPanel({
                 onRequestCode(new Event("submit") as any);
               }}
             >
-              {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}
+              {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend link"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={backToEmail} disabled={loading}>
+              Use a different email
             </Button>
           </div>
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Verify &amp; sign in
-          </Button>
-        </form>
+        </div>
       )}
 
       <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground">

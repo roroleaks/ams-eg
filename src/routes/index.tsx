@@ -908,8 +908,8 @@ function SignInGate({ nextPath, onSignIn }: { nextPath: string; onSignIn: () => 
       </h2>
       <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
         Matched AMS products, official indications and the clinical evidence report are only
-        available to authorised users. Sign in to continue — no password needed, we email you a
-        one-time code.
+        available to authorised users. Sign in to continue — no password needed, we'll email you a
+        secure sign-in link.
       </p>
       <div className="mt-6 flex justify-center">
         <Button className="gap-2 rounded-full" onClick={onSignIn}>
