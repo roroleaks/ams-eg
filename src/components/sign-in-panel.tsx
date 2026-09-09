@@ -32,6 +32,9 @@ export function SignInPanel({
   const [email, setEmail] = useState<string>(
     () => (typeof window !== "undefined" ? localStorage.getItem(LAST_EMAIL_KEY) ?? "" : ""),
   );
+  const [remembered, setRemembered] = useState<string | null>(() =>
+    typeof window !== "undefined" ? (localStorage.getItem(LAST_EMAIL_KEY) ?? null) : null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -220,6 +223,16 @@ export function SignInPanel({
     setInfo(null);
   }
 
+  function forgetEmail() {
+    try {
+      localStorage.removeItem(LAST_EMAIL_KEY);
+    } catch {
+      /* ignore */
+    }
+    setRemembered(null);
+    setEmail("");
+  }
+
   return (
     <div>
       <div className="flex items-center gap-3">
@@ -279,6 +292,15 @@ export function SignInPanel({
               placeholder="you@organisation.com"
             />
           </div>
+          {remembered && email === remembered && (
+            <button
+              type="button"
+              onClick={forgetEmail}
+              className="self-end text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Forget this email
+            </button>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
           {info && <p className="text-sm text-muted-foreground">{info}</p>}
           <p className="text-[11px] leading-relaxed text-muted-foreground">
