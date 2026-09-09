@@ -3,10 +3,16 @@ import { endTrackedSession } from "@/lib/session";
 
 /** Ends the tracked session then signs out of Supabase. */
 export async function completeSignOut(): Promise<void> {
+  if (typeof window !== "undefined") {
+    const confirmed = window.confirm(
+      "Sign out? You'll need a new sign-in link to return to this device.",
+    );
+    if (!confirmed) return;
+  }
   await endTrackedSession();
   await supabase.auth.signOut();
   if (typeof window !== "undefined") {
-    window.location.href = "/auth";
+    window.location.href = "/auth?next=%2F";
   }
 }
 
