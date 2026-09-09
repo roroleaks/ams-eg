@@ -35,6 +35,7 @@ export function SignInPanel({
   const [info, setInfo] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
   const timerRef = useRef<number | null>(null);
+  const completedRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -76,7 +77,10 @@ export function SignInPanel({
   }
 
   async function finishAuthentication() {
+    if (completedRef.current) return;
+    completedRef.current = true;
     if (!(await ensureActiveAccount())) {
+      completedRef.current = false;
       setLoading(false);
       return;
     }
@@ -93,7 +97,6 @@ export function SignInPanel({
       const code = params.get("code");
       const tokenHash = params.get("token_hash");
       const err = params.get("error");
-      const oauthNext = params.get("next");
       if (err) {
         setError(
           decodeURIComponent(params.get("error_description") ?? "Sign in failed. Please try again."),
@@ -126,14 +129,26 @@ export function SignInPanel({
             await finishAuthentication();
           }
         }
-      } else if (oauthNext !== null && window.location.hash.length > 0) {
-        // Clean up leftover OAuth hash fragments (e.g. #access_token=...) after exchange.
-        window.history.replaceState(null, "", window.location.pathname);
+      } else {
+        // Magic-link / OAuth redirects can deliver the session as URL fragment
+        // parameters (e.g. #access_token=...&refresh_token=...). We must NOT
+        // clean the URL before this recovery runs, or sign-in fails silently.
+        const { data } = await supabase.auth.getSession();
+        if (!cancelled && data.session) await finishAuthentication();
       }
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Complete auth whenever Supabase reports a signed-in user (async recovery). */
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user && !completedRef.current) void finishAuthentication();
+    });
+    return () => sub.subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
