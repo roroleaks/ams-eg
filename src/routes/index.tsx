@@ -219,11 +219,22 @@ function Index() {
     loadComplaintEmbeddings()
       .then(() => live && setReady(true))
       .catch(() => live && setReady(false));
-    loadEmbeddings().catch(() => null);
+    // The full passage matrix is large; fetch it once the browser is idle so it
+    // never competes with first paint or the complaint matrices.
+    const idle =
+      typeof window !== "undefined" && "requestIdleCallback" in window
+        ? window.requestIdleCallback(() => loadEmbeddings().catch(() => null), { timeout: 4000 })
+        : (setTimeout(() => loadEmbeddings().catch(() => null), 1200) as unknown as number);
     return () => {
       live = false;
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idle);
+      } else {
+        clearTimeout(idle);
+      }
     };
   }, []);
+
 
   // Debounced query embedding
   useEffect(() => {
