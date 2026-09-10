@@ -65,6 +65,33 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_audit_logs: {
+        Row: {
+          action: string
+          admin_id: string
+          created_at: string
+          details: Json
+          id: string
+          target_user_id: string | null
+        }
+        Insert: {
+          action: string
+          admin_id: string
+          created_at?: string
+          details?: Json
+          id?: string
+          target_user_id?: string | null
+        }
+        Update: {
+          action?: string
+          admin_id?: string
+          created_at?: string
+          details?: Json
+          id?: string
+          target_user_id?: string | null
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           created_at: string
@@ -322,40 +349,55 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string
+          display_name: string | null
           email: string | null
           full_name: string | null
           id: string
+          last_active_at: string | null
           last_login_at: string
+          last_sign_in_at: string
           provider: string | null
           provider_account_id: string | null
           report_count: number
+          role: Database["public"]["Enums"]["app_role"]
           search_count: number
+          status: string
           updated_at: string
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string
+          display_name?: string | null
           email?: string | null
           full_name?: string | null
           id: string
+          last_active_at?: string | null
           last_login_at?: string
+          last_sign_in_at?: string
           provider?: string | null
           provider_account_id?: string | null
           report_count?: number
+          role?: Database["public"]["Enums"]["app_role"]
           search_count?: number
+          status?: string
           updated_at?: string
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
+          display_name?: string | null
           email?: string | null
           full_name?: string | null
           id?: string
+          last_active_at?: string | null
           last_login_at?: string
+          last_sign_in_at?: string
           provider?: string | null
           provider_account_id?: string | null
           report_count?: number
+          role?: Database["public"]["Enums"]["app_role"]
           search_count?: number
+          status?: string
           updated_at?: string
         }
         Relationships: []
@@ -471,6 +513,51 @@ export type Database = {
         }
         Relationships: []
       }
+      user_sessions: {
+        Row: {
+          browser: string | null
+          created_at: string
+          device_type: string | null
+          duration_seconds: number | null
+          ended_at: string | null
+          id: string
+          last_seen_at: string
+          operating_system: string | null
+          referrer: string | null
+          session_key: string
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          browser?: string | null
+          created_at?: string
+          device_type?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          last_seen_at?: string
+          operating_system?: string | null
+          referrer?: string | null
+          session_key: string
+          started_at?: string
+          user_id: string
+        }
+        Update: {
+          browser?: string | null
+          created_at?: string
+          device_type?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          last_seen_at?: string
+          operating_system?: string | null
+          referrer?: string | null
+          session_key?: string
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -483,6 +570,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      purge_old_sessions: { Args: never; Returns: number }
     }
     Enums: {
       app_role: "admin" | "user" | "owner" | "medical_editor" | "registered"
