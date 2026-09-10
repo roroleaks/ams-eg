@@ -1,1 +1,0 @@
-﻿Resolve LOVABLE_API_KEY from runtime env and import.meta.env (.env.local for preview)
