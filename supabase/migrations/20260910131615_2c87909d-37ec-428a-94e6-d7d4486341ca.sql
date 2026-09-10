@@ -1,8 +1,3 @@
--- ====================================================================
--- Private application: profiles extension, user_sessions,
--- admin_audit_logs, guest-mode removal, triggers
--- ====================================================================
-
 -- 1. Extend profiles table
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS display_name text,
@@ -38,7 +33,6 @@ CREATE TRIGGER on_auth_user_created_create_profile
 AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Update last_sign_in_at on auth user sign-in
 CREATE OR REPLACE FUNCTION public.touch_profile_sign_in()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -57,7 +51,7 @@ FOR EACH ROW
 WHEN (OLD.last_sign_in_at IS DISTINCT FROM NEW.last_sign_in_at)
 EXECUTE FUNCTION public.touch_profile_sign_in();
 
--- 3. Keep profiles.role in sync with user_roles (the single source of truth)
+-- 3. Keep profiles.role in sync with user_roles
 CREATE OR REPLACE FUNCTION public.sync_profile_role()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -75,7 +69,6 @@ CREATE TRIGGER on_user_roles_sync_profile
 AFTER INSERT OR UPDATE OR DELETE ON public.user_roles
 FOR EACH ROW EXECUTE FUNCTION public.sync_profile_role();
 
--- Ensure existing profiles have role synced
 UPDATE public.profiles p SET role = COALESCE((SELECT u.role FROM public.user_roles u WHERE u.user_id = p.id LIMIT 1), 'user'::public.app_role);
 
 -- 4. Protect profile role/status from user modification
@@ -103,7 +96,7 @@ BEFORE UPDATE ON public.profiles
 FOR EACH ROW EXECUTE FUNCTION public.protect_profile_role_status();
 
 -- 5. user_sessions table
-CREATE TABLE public.user_sessions (
+CREATE TABLE IF NOT EXISTS public.user_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   session_key text NOT NULL,
@@ -118,9 +111,9 @@ CREATE TABLE public.user_sessions (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX user_sessions_key_idx ON public.user_sessions (user_id, session_key);
-CREATE INDEX user_sessions_user_idx ON public.user_sessions (user_id, started_at DESC);
-CREATE INDEX user_sessions_ended_idx ON public.user_sessions (ended_at);
+CREATE UNIQUE INDEX IF NOT EXISTS user_sessions_key_idx ON public.user_sessions (user_id, session_key);
+CREATE INDEX IF NOT EXISTS user_sessions_user_idx ON public.user_sessions (user_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS user_sessions_ended_idx ON public.user_sessions (ended_at);
 
 GRANT SELECT, INSERT, UPDATE ON public.user_sessions TO authenticated;
 GRANT ALL ON public.user_sessions TO service_role;
@@ -139,7 +132,7 @@ CREATE POLICY "admins update sessions" ON public.user_sessions
   FOR UPDATE TO authenticated USING (public.has_role(auth.uid(), 'admin'));
 
 -- 6. admin_audit_logs table
-CREATE TABLE public.admin_audit_logs (
+CREATE TABLE IF NOT EXISTS public.admin_audit_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   admin_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   action text NOT NULL,
@@ -147,18 +140,18 @@ CREATE TABLE public.admin_audit_logs (
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX admin_audit_logs_created_idx ON public.admin_audit_logs (created_at DESC);
-CREATE INDEX admin_audit_logs_admin_idx ON public.admin_audit_logs (admin_id);
+CREATE INDEX IF NOT EXISTS admin_audit_logs_created_idx ON public.admin_audit_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS admin_audit_logs_admin_idx ON public.admin_audit_logs (admin_id);
 
 GRANT ALL ON public.admin_audit_logs TO service_role;
-GRANT SELECT ON public.admin_audit_logs TO authenticated;
+GRANT SELECT, INSERT ON public.admin_audit_logs TO authenticated;
 ALTER TABLE public.admin_audit_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "admins read audit logs" ON public.admin_audit_logs
   FOR SELECT TO authenticated USING (public.has_role(auth.uid(), 'admin'));
 CREATE POLICY "admins insert audit logs" ON public.admin_audit_logs
   FOR INSERT TO authenticated WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
--- 7. Guest mode removal: revoke anon access to previously-public tables
+-- 7. Guest mode removal
 REVOKE INSERT ON public.guest_events FROM anon;
 REVOKE INSERT ON public.search_analytics FROM anon;
 REVOKE INSERT ON public.activity_events FROM anon;
@@ -168,12 +161,12 @@ DROP POLICY IF EXISTS "anyone records guest events" ON public.guest_events;
 DROP POLICY IF EXISTS "guests insert anonymous activity" ON public.activity_events;
 DROP POLICY IF EXISTS "guests log anonymous searches" ON public.search_analytics;
 
--- complaint_library: now authenticated-only (no anon)
 DROP POLICY IF EXISTS "anyone reads the library" ON public.complaint_library;
+DROP POLICY IF EXISTS "authenticated reads library" ON public.complaint_library;
 CREATE POLICY "authenticated reads library" ON public.complaint_library
   FOR SELECT TO authenticated USING (true);
 
--- 8. Activity retention cleanup helper (default 90 days)
+-- 8. Session cleanup helper
 CREATE OR REPLACE FUNCTION public.purge_old_sessions()
 RETURNS integer
 LANGUAGE plpgsql
@@ -186,7 +179,6 @@ BEGIN
   IF NOT public.has_role(auth.uid(), 'admin') THEN
     RAISE EXCEPTION 'forbidden';
   END IF;
-  -- End sessions idle > 30 min that have no explicit ended_at
   UPDATE public.user_sessions
      SET ended_at = last_seen_at,
          duration_seconds = ROUND(EXTRACT(EPOCH FROM (last_seen_at - started_at)))

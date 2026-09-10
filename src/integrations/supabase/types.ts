@@ -14,33 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      admin_audit_logs: {
-        Row: {
-          action: string
-          admin_id: string
-          created_at: string
-          details: Json
-          id: string
-          target_user_id: string | null
-        }
-        Insert: {
-          action: string
-          admin_id: string
-          created_at?: string
-          details?: Json
-          id?: string
-          target_user_id?: string | null
-        }
-        Update: {
-          action?: string
-          admin_id?: string
-          created_at?: string
-          details?: Json
-          id?: string
-          target_user_id?: string | null
-        }
-        Relationships: []
-      }
       activity_events: {
         Row: {
           category: string
@@ -89,6 +62,33 @@ export type Database = {
           session_id?: string | null
           user_id?: string | null
           user_role?: string | null
+        }
+        Relationships: []
+      }
+      admin_audit_logs: {
+        Row: {
+          action: string
+          admin_id: string
+          created_at: string
+          details: Json
+          id: string
+          target_user_id: string | null
+        }
+        Insert: {
+          action: string
+          admin_id: string
+          created_at?: string
+          details?: Json
+          id?: string
+          target_user_id?: string | null
+        }
+        Update: {
+          action?: string
+          admin_id?: string
+          created_at?: string
+          details?: Json
+          id?: string
+          target_user_id?: string | null
         }
         Relationships: []
       }
@@ -459,51 +459,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_sessions: {
-        Row: {
-          browser: string | null
-          created_at: string
-          device_type: string | null
-          duration_seconds: number | null
-          ended_at: string | null
-          id: string
-          last_seen_at: string
-          operating_system: string | null
-          referrer: string | null
-          session_key: string
-          started_at: string
-          user_id: string
-        }
-        Insert: {
-          browser?: string | null
-          created_at?: string
-          device_type?: string | null
-          duration_seconds?: number | null
-          ended_at?: string | null
-          id?: string
-          last_seen_at?: string
-          operating_system?: string | null
-          referrer?: string | null
-          session_key: string
-          started_at?: string
-          user_id: string
-        }
-        Update: {
-          browser?: string | null
-          created_at?: string
-          device_type?: string | null
-          duration_seconds?: number | null
-          ended_at?: string | null
-          id?: string
-          last_seen_at?: string
-          operating_system?: string | null
-          referrer?: string | null
-          session_key?: string
-          started_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       user_permissions: {
         Row: {
           can_download: boolean
@@ -558,6 +513,51 @@ export type Database = {
         }
         Relationships: []
       }
+      user_sessions: {
+        Row: {
+          browser: string | null
+          created_at: string
+          device_type: string | null
+          duration_seconds: number | null
+          ended_at: string | null
+          id: string
+          last_seen_at: string
+          operating_system: string | null
+          referrer: string | null
+          session_key: string
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          browser?: string | null
+          created_at?: string
+          device_type?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          last_seen_at?: string
+          operating_system?: string | null
+          referrer?: string | null
+          session_key: string
+          started_at?: string
+          user_id: string
+        }
+        Update: {
+          browser?: string | null
+          created_at?: string
+          device_type?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          last_seen_at?: string
+          operating_system?: string | null
+          referrer?: string | null
+          session_key?: string
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -570,6 +570,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      purge_old_sessions: { Args: never; Returns: number }
     }
     Enums: {
       app_role: "admin" | "user" | "owner" | "medical_editor" | "registered"

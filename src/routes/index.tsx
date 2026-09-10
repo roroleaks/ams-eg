@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Search,
@@ -219,11 +219,22 @@ function Index() {
     loadComplaintEmbeddings()
       .then(() => live && setReady(true))
       .catch(() => live && setReady(false));
-    loadEmbeddings().catch(() => null);
+    // The full passage matrix is large; fetch it once the browser is idle so it
+    // never competes with first paint or the complaint matrices.
+    const idle =
+      typeof window !== "undefined" && "requestIdleCallback" in window
+        ? window.requestIdleCallback(() => loadEmbeddings().catch(() => null), { timeout: 4000 })
+        : (setTimeout(() => loadEmbeddings().catch(() => null), 1200) as unknown as number);
     return () => {
       live = false;
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idle);
+      } else {
+        clearTimeout(idle);
+      }
     };
   }, []);
+
 
   // Debounced query embedding
   useEffect(() => {
@@ -247,10 +258,15 @@ function Index() {
     return () => clearTimeout(handle);
   }, [query, embedFn]);
 
+  // Matching scans the whole passage index, so it runs against a deferred copy
+  // of the query: keystrokes stay smooth and results settle a frame later.
+  // Ranking itself is unchanged.
+  const deferredQuery = useDeferredValue(query);
   const matches: ProductMatch[] = useMemo(() => {
-    if (!query.trim()) return [];
-    return matchProducts(query, ready ? qVec : null);
-  }, [query, qVec, ready]);
+    if (!deferredQuery.trim()) return [];
+    return matchProducts(deferredQuery, ready ? qVec : null);
+  }, [deferredQuery, qVec, ready]);
+
 
   // A single, ordered view of the page's current background work. Products
   // render immediately; this line (at most one message) explains what is still
