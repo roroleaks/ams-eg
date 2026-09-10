@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { SignInPanel } from "@/components/sign-in-panel";
 import { useAuth } from "@/lib/auth-context";
 import { consumeLocalCleared } from "@/lib/sign-out";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — AMS" }] }),
@@ -34,24 +34,20 @@ function hasStoredAuthToken(): boolean {
 function AuthPage() {
   const { next } = Route.useSearch();
   const dest = safeNext(next || "/");
-  const { status, user, signOut, signingOut, restoreFailed, retryRestore } = useAuth();
+  const { status, user, signingOut, restoreFailed, retryRestore } = useAuth();
   const checking = status === "loading";
-  const signedInEmail = user?.email ?? null;
   const [expired, setExpired] = useState(false);
   const [localCleared, setLocalCleared] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<null | "switch" | "signout">(null);
   const [tab, setTab] = useState<"signin" | "create">("signin");
 
-  // Magic-link / Google OAuth return to /auth with the session delivered as URL
-  // fragment parameters. Once the provider reports authenticated, complete the
-  // redirect exactly once — without a second auth listener or further requests.
+  // A valid persisted session means this device is already trusted: send the
+  // user straight back into the app without any sign-in prompt or extra click.
+  // Covers both direct visits and the magic-link / Google OAuth return (the
+  // provider applies the delivered session before this effect runs).
   useEffect(() => {
-    if (status !== "authenticated" || !user) return;
-    const hash = typeof window !== "undefined" ? window.location.hash : "";
-    if (/[#&](access_token|id_token|error)=/.test(hash)) {
-      window.location.href = dest;
-    }
-  }, [status, user, dest]);
+    if (status !== "authenticated" || !user || signingOut) return;
+    window.location.href = dest;
+  }, [status, user, signingOut, dest]);
 
   // A one-shot notice when a sign-out could only clear the device locally (the
   // provider was unreachable). It never claims the server session was ended.
@@ -79,74 +75,6 @@ function AuthPage() {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <span className="sr-only">Checking your sign-in status…</span>
-      </div>
-    );
-  }
-
-  function doSignOut(go: string) {
-    setConfirmAction(null);
-    void signOut(go);
-  }
-
-  if (signedInEmail) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
-        <Card className="w-full max-w-md p-8 text-center">
-          <img src="/ams-logo.png" alt="AMS" className="mx-auto h-12 w-12" />
-          <div className="mx-auto mt-4 grid h-12 w-12 place-items-center rounded-full bg-primary/10">
-            <CheckCircle2 className="h-6 w-6 text-primary" />
-          </div>
-          <h1 className="mt-4 text-lg font-semibold text-foreground">You are already signed in</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Signed in as <span className="font-medium text-foreground">{signedInEmail}</span>
-          </p>
-
-          {confirmAction ? (
-            <div className="mt-6 space-y-3">
-              <p className="text-sm text-muted-foreground">
-                {confirmAction === "switch"
-                  ? "You'll be signed out on this device so you can use a different account."
-                  : "This will end your session on this device."}
-              </p>
-              <Button
-                className="w-full"
-                disabled={signingOut}
-                onClick={() => doSignOut(confirmAction === "switch" ? "/auth" : "/auth?next=%2F")}
-              >
-                {signingOut ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Signing out…
-                  </>
-                ) : confirmAction === "switch" ? (
-                  "Switch account"
-                ) : (
-                  "Sign out"
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full"
-                disabled={signingOut}
-                onClick={() => setConfirmAction(null)}
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <div className="mt-6 space-y-3">
-              <Button asChild className="w-full">
-                <a href={dest}>Continue to AMS Product Advisor</a>
-              </Button>
-              <Button type="button" variant="outline" className="w-full" onClick={() => setConfirmAction("switch")}>
-                Use a different account
-              </Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => setConfirmAction("signout")}>
-                Sign out
-              </Button>
-            </div>
-          )}
-        </Card>
       </div>
     );
   }
