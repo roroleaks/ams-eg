@@ -152,7 +152,7 @@ export const buildLibraryEntry = createServerFn({ method: "POST" })
       status = "failed";
       error = e instanceof Error ? e.message : "Report generation failed";
       // Credit / policy failures must stop the whole batch.
-      if (/credits are exhausted|blocked for this workspace|Missing LOVABLE_API_KEY/i.test(error)) {
+      if (/credits are exhausted|blocked for this workspace|Missing LOVABLE_API_KEY|AI is unavailable in this preview/i.test(error)) {
         await db.from("complaint_library").upsert(
           {
             complaint: data.complaint,

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getLovableApiKey } from "@/lib/lovable-api-key";
 
 const Input = z.object({ query: z.string().min(1).max(500) });
 

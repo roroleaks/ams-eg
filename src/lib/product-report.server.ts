@@ -27,9 +27,11 @@ export interface ReportInput {
   literature?: ReportLiterature[];
 }
 
+import { getLovableApiKey } from "@/lib/lovable-api-key";
+
 /** Builds the Clinical Product Report markdown via the Lovable AI gateway. */
 export async function generateProductReport(data: ReportInput): Promise<string> {
-  const key = process.env.LOVABLE_API_KEY;
+  const key = getLovableApiKey();
   if (!key)
     throw new Error(
       "AI is unavailable in this preview. Open the published app to generate reports.",
