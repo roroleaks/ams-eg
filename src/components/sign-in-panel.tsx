@@ -310,7 +310,11 @@ export function SignInPanel({
       }
       if (res.error) {
         const msg = res.error.message || "";
-        if (/email not confirmed/i.test(msg)) {
+        const code =
+          (res.error as { code?: string; error_code?: string }).code ??
+          (res.error as { error_code?: string }).error_code ??
+          "";
+        if (/email.*not.*confirm|email_not_confirmed/i.test(msg + " " + code)) {
           setError(
             "Your email has not been verified yet. Check your inbox for the verification link, or use 'Forgot password?' to receive a sign-in link.",
           );
