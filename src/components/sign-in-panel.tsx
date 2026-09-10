@@ -312,7 +312,7 @@ export function SignInPanel({
         const msg = res.error.message || "";
         if (/email not confirmed/i.test(msg)) {
           setError(
-            "Your email has not been verified yet. Please check your inbox for the verification link, or create a new account.",
+            "Your email has not been verified yet. Check your inbox for the verification link, or use 'Forgot password?' to receive a sign-in link.",
           );
         } else if (/invalid login credentials|invalid_grant/i.test(msg)) {
           setError("Incorrect email or password. Please try again.");
@@ -398,9 +398,33 @@ export function SignInPanel({
         await finishAuthentication();
         return;
       }
-      // Email confirmation required — show success message.
+      // Email confirmation required — account created but password won't work
+      // until the user verifies their email. Send a magic link immediately so
+      // they can sign in right away while the password waits for verification.
       const list = saveKnownEmail(normEmail);
       setKnownEmails(list);
+      try {
+        const otp = await raceWithTimeout(
+          supabase.auth.signInWithOtp({
+            email: normEmail,
+            options: {
+              shouldCreateUser: false,
+              emailRedirectTo: `${window.location.origin}/auth/callback${
+                next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
+              }`,
+            },
+          }),
+          CALLBACK_TIMEOUT_MS,
+          "TIMEOUT" as const,
+        );
+        if (otp !== "TIMEOUT" && !otp.error) {
+          setInfo(
+            "We also sent you a sign-in link so you can get in right away.",
+          );
+        }
+      } catch {
+        // Non-critical — the verification email is still coming.
+      }
       setStep("sent");
       startResendCountdown();
     } catch (err) {
@@ -866,7 +890,7 @@ export function SignInPanel({
             <p className="font-semibold text-foreground">Check your email</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {mode === "create"
-                ? "We sent a verification link to your email address. Open it to activate your account."
+                ? "We sent a verification email and a sign-in link to your email address. Open either one to access your account."
                 : "We sent a password reset link to your email address. Open it to set a new password."}
             </p>
           </div>
