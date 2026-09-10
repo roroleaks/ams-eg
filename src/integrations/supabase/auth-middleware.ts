@@ -33,8 +33,13 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
   async ({ next }) => {
     
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+    // Server-side auth must validate against the CURRENT project. Lovable's
+    // runtime env can lag behind the repo (stale connection), so pin the
+    // canonical values here; override with *_SERVER_* when moving projects.
+    const SUPABASE_URL =
+      process.env.SUPABASE_SERVER_URL ?? "https://mipbeciycmefyjiverid.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY =
+      process.env.SUPABASE_SERVER_PUBLISHABLE_KEY ?? "sb_publishable_61xG4dLiVDShhbzSqjcscw__44yW2fH";
 
     if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
       const missing = [

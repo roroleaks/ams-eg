@@ -7,8 +7,9 @@ function isNewKey(v: string) {
 }
 
 function makeClient(token?: string): SupabaseClient<Database> {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY!;
+  // Pin the canonical project connection server-side (runtime env may lag).
+  const url = process.env.SUPABASE_SERVER_URL ?? "https://mipbeciycmefyjiverid.supabase.co";
+  const key = process.env.SUPABASE_SERVER_PUBLISHABLE_KEY ?? "sb_publishable_61xG4dLiVDShhbzSqjcscw__44yW2fH";
   return createClient<Database>(url, key, {
     global: {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
