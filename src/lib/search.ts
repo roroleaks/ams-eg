@@ -36,43 +36,73 @@ const chunks = chunksData as Chunk[];
 export const DIMS = meta.dims;
 
 // ---------- BM25 ----------
-const docTokens: string[][] = chunks.map((c) =>
-  tokenize(`${c.text} ${c.section ?? ""} ${c.product ?? ""}`)
-);
-const df = new Map<string, number>();
-docTokens.forEach((toks) => {
-  new Set(toks).forEach((t) => df.set(t, (df.get(t) ?? 0) + 1));
-});
+// The inverted index is built lazily on the first search (and cached), so
+// importing this module never blocks first paint. Term frequencies are
+// precomputed once instead of being rebuilt on every query.
 const N = chunks.length;
-const avgLen = docTokens.reduce((s, t) => s + t.length, 0) / N;
 const k1 = 1.5;
 const b = 0.75;
 
-function bm25(qTokens: string[]): { score: number; matched: string[] }[] {
-  const out: { score: number; matched: string[] }[] = new Array(N);
+interface Index {
+  tf: Map<string, number>[];
+  len: Int32Array;
+  df: Map<string, number>;
+  avgLen: number;
+}
+
+let index: Index | null = null;
+
+function getIndex(): Index {
+  if (index) return index;
+  const tf: Map<string, number>[] = new Array(N);
+  const len = new Int32Array(N);
+  const df = new Map<string, number>();
+  let total = 0;
   for (let i = 0; i < N; i++) {
-    const toks = docTokens[i];
-    const len = toks.length;
-    if (len === 0) {
+    const c = chunks[i];
+    const toks = tokenize(`${c.text} ${c.section ?? ""} ${c.product ?? ""}`);
+    const m = new Map<string, number>();
+    for (const t of toks) m.set(t, (m.get(t) ?? 0) + 1);
+    for (const t of m.keys()) df.set(t, (df.get(t) ?? 0) + 1);
+    tf[i] = m;
+    len[i] = toks.length;
+    total += toks.length;
+  }
+  index = { tf, len, df, avgLen: total / (N || 1) };
+  return index;
+}
+
+function bm25(qTokens: string[]): { score: number; matched: string[] }[] {
+  const { tf, len, df, avgLen } = getIndex();
+  const out: { score: number; matched: string[] }[] = new Array(N);
+  // Precompute IDF per unique query term once, not per document.
+  const idf = new Map<string, number>();
+  for (const q of qTokens) {
+    if (idf.has(q)) continue;
+    const n = df.get(q) ?? 0;
+    idf.set(q, Math.log(1 + (N - n + 0.5) / (n + 0.5)));
+  }
+  for (let i = 0; i < N; i++) {
+    const l = len[i];
+    if (l === 0) {
       out[i] = { score: 0, matched: [] };
       continue;
     }
-    const tf = new Map<string, number>();
-    toks.forEach((t) => tf.set(t, (tf.get(t) ?? 0) + 1));
+    const map = tf[i];
+    const norm = k1 * (1 - b + b * (l / avgLen));
     let score = 0;
     const matched: string[] = [];
     for (const q of qTokens) {
-      const f = tf.get(q) ?? 0;
+      const f = map.get(q) ?? 0;
       if (f === 0) continue;
       matched.push(q);
-      const n = df.get(q) ?? 0;
-      const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
-      score += idf * ((f * (k1 + 1)) / (f + k1 * (1 - b + b * (len / avgLen))));
+      score += idf.get(q)! * ((f * (k1 + 1)) / (f + norm));
     }
     out[i] = { score, matched };
   }
   return out;
 }
+
 
 // ---------- Embeddings ----------
 let embeddings: Float32Array | null = null;
