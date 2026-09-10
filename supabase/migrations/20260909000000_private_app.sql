@@ -23,7 +23,7 @@ BEGIN
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name'),
     COALESCE(NEW.raw_user_meta_data->>'avatar_url', NEW.raw_user_meta_data->>'picture'),
-    COALESCE(NEW.app_metadata->>'provider', 'email'),
+    COALESCE(NEW.raw_app_meta_data->>'provider', 'email'),
     COALESCE(NEW.raw_user_meta_data->>'sub', NEW.raw_user_meta_data->>'provider_id')
   )
   ON CONFLICT (id) DO UPDATE SET
