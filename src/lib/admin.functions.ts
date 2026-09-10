@@ -33,14 +33,19 @@ async function log(
     created_by: string;
   },
 ) {
-  await admin.from("indexing_logs").insert({
-    document_id,
-    action,
-    status,
-    message,
-    duration_ms,
-    created_by,
-  });
+  try {
+    await admin.from("indexing_logs").insert({
+      document_id,
+      action,
+      status,
+      message,
+      duration_ms,
+      created_by,
+    });
+  } catch {
+    // Logging is best-effort: it must never fail an admin operation whose
+    // underlying write has already succeeded.
+  }
 }
 
 /** Writes a tamper-evident admin action audit trail. */

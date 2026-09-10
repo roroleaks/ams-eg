@@ -24,8 +24,48 @@ function safeNext(next: string | null | undefined): string {
   return next;
 }
 const LAST_EMAIL_KEY = "ams_last_login_email";
+const KNOWN_EMAILS_KEY = "ams_known_emails";
+const MAX_KNOWN_EMAILS = 6;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** Previously-used sign-in emails, most recent first (local-only library). */
+function readKnownEmails(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(KNOWN_EMAILS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((e): e is string => typeof e === "string" && EMAIL_RE.test(e.trim()))
+      .slice(0, MAX_KNOWN_EMAILS);
+  } catch {
+    return [];
+  }
+}
+
+function writeKnownEmails(list: string[]): void {
+  try {
+    if (list.length) localStorage.setItem(KNOWN_EMAILS_KEY, JSON.stringify(list));
+    else localStorage.removeItem(KNOWN_EMAILS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Records a used email in the library (deduped, most recent first). */
+function saveKnownEmail(value: string): string[] {
+  const em = value.trim().toLowerCase();
+  const list = [em, ...readKnownEmails().filter((e) => e !== em)].slice(0, MAX_KNOWN_EMAILS);
+  writeKnownEmails(list);
+  try {
+    localStorage.setItem(LAST_EMAIL_KEY, em);
+  } catch {
+    /* ignore */
+  }
+  return list;
+}
 
 // Surface provider errors verbatim, but translate transport-level failures into
 // a clear network message instead of leaking technical "fetch failed" text.
@@ -68,6 +108,7 @@ export function SignInPanel({
   const [remembered, setRemembered] = useState<string | null>(() =>
     typeof window !== "undefined" ? (localStorage.getItem(LAST_EMAIL_KEY) ?? null) : null,
   );
+  const [knownEmails, setKnownEmails] = useState<string[]>(() => readKnownEmails());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -139,11 +180,8 @@ export function SignInPanel({
       }
     }
     if (user.email) {
-      try {
-        localStorage.setItem(LAST_EMAIL_KEY, user.email);
-      } catch {
-        /* ignore */
-      }
+      const list = saveKnownEmail(user.email);
+      setKnownEmails(list);
     }
     return true;
   }
@@ -255,11 +293,8 @@ export function SignInPanel({
         return;
       }
       if (result.error) throw result.error;
-      try {
-        localStorage.setItem(LAST_EMAIL_KEY, normalized);
-      } catch {
-        /* ignore */
-      }
+      const list = saveKnownEmail(normalized);
+      setKnownEmails(list);
       setRemembered(normalized);
       // Generic message — never reveals whether an account exists.
       setInfo(
@@ -300,6 +335,10 @@ export function SignInPanel({
   }
 
   function forgetEmail() {
+    const target = (email || remembered || "").trim().toLowerCase();
+    const remaining = knownEmails.filter((e) => e !== target);
+    writeKnownEmails(remaining);
+    setKnownEmails(remaining);
     try {
       localStorage.removeItem(LAST_EMAIL_KEY);
     } catch {
@@ -307,6 +346,24 @@ export function SignInPanel({
     }
     setRemembered(null);
     setEmail("");
+  }
+
+  function removeKnown(savedEmail: string) {
+    const target = savedEmail.toLowerCase();
+    setKnownEmails((prev) => {
+      const remaining = prev.filter((e) => e !== target);
+      writeKnownEmails(remaining);
+      return remaining;
+    });
+    if ((remembered ?? "").toLowerCase() === target) {
+      try {
+        localStorage.removeItem(LAST_EMAIL_KEY);
+      } catch {
+        /* ignore */
+      }
+      setRemembered(null);
+      if (email.trim().toLowerCase() === target) setEmail("");
+    }
   }
 
   const sentHeadline = "Check your email";
@@ -364,6 +421,42 @@ export function SignInPanel({
           </p>
           <div>
             <Label htmlFor="signin-email">Email address</Label>
+            {knownEmails.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Recently used on this device
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {knownEmails.map((savedEmail) => (
+                    <span
+                      key={savedEmail}
+                      className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/40 py-1 pl-3 pr-1 text-xs"
+                    >
+                      <button
+                        type="button"
+                        className="hover:underline"
+                        onClick={() => {
+                          setError(null);
+                          setInfo(null);
+                          setEmail(savedEmail);
+                        }}
+                      >
+                        {savedEmail}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${savedEmail} from saved emails`}
+                        title="Remove this saved email"
+                        className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        onClick={() => removeKnown(savedEmail)}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <Input
               id="signin-email"
               type="email"

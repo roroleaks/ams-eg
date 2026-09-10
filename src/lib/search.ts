@@ -151,7 +151,10 @@ export function hybridSearch(
   let sem: Float32Array | null = null;
   let maxSem = 0;
   let minSem = 1;
-  if (qVec && embeddings) {
+  // Guard against a truncated/partial embeddings file: out-of-bounds reads
+  // would make scores NaN, which silently drops every result. Fall back to
+  // keyword-only scoring instead of returning an empty search.
+  if (qVec && embeddings && embeddings.length >= N * DIMS) {
     sem = cosineAgainst(qVec, embeddings);
     for (let i = 0; i < N; i++) {
       if (sem[i] > maxSem) maxSem = sem[i];

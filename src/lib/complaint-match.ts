@@ -100,12 +100,16 @@ export function matchProducts(
     const item = COMPLAINT_INDEX[i];
     const kw = keywordOverlap(qTokens, i);
     let sem = 0;
-    if (qVec && cEmb) {
+    // Guard a truncated complaint-embeddings file: an out-of-bounds read gives
+    // `undefined`, so the dot product becomes NaN and NaN comparisons drop
+    // every product below. Degrade to keyword-only scoring instead.
+    if (qVec && cEmb && cEmb.length >= COMPLAINT_INDEX.length * DIMS) {
       let s = 0;
       const off = i * DIMS;
       for (let d = 0; d < DIMS; d++) s += qVec[d] * cEmb[off + d];
       // rescale typical cosine range 0.15..0.85
       sem = Math.max(0, (s - 0.2) / 0.6);
+      if (Number.isNaN(sem)) sem = 0;
     }
     const exact = item.matchText.toLowerCase().includes(q) ? 0.35 : 0;
     const score = Math.min(1, 0.45 * kw + 0.55 * sem + exact);

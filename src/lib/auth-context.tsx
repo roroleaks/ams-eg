@@ -109,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const restoringRef = useRef(false);
   const signOutInFlightRef = useRef<Promise<void> | null>(null);
   const signedOutByListenerRef = useRef(false);
+  const localSignOutRef = useRef(false);
   const authGenerationRef = useRef(0);
   const restoreFnRef = useRef<() => void>(() => {});
 
@@ -187,7 +188,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Exactly one auth-state listener for the whole application.
     const { data: sub } = supabase.auth.onAuthStateChange((event, sess) => {
-      if (event === "SIGNED_IN") setSignInCount((c) => c + 1);
       if (cancelledRef.current) return;
       const gen = authGenerationRef.current;
 
@@ -203,6 +203,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Only honor SIGNED_OUT for the current generation; the one emitted by
         // our own signOut() (post-generation bump) is finalized by signOut().
         if (gen !== authGenerationRef.current) return;
+        if (localSignOutRef.current) {
+          // This tab's own signOut() counts and clears in its finally block, so
+          // the SIGNED_OUT it triggers must never count a second time.
+          clearAuthState();
+          return;
+        }
         signedOutByListenerRef.current = true;
         setSignOutCount((c) => c + 1);
         clearAuthState();
@@ -217,6 +223,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ) {
         // A stale event from a previous generation must never re-authenticate.
         if (gen !== authGenerationRef.current) return;
+        // Only genuine sign-ins increment the counter — never restores (the
+        // first event on a refreshed page is INITIAL_SESSION, not SIGNED_IN).
+        if (event === "SIGNED_IN") setSignInCount((c) => c + 1);
         if (sess) applySession(sess);
         else clearAuthState();
       }
@@ -261,22 +270,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOutInFlightRef.current = (async () => {
       setStatus("signing_out");
       signedOutByListenerRef.current = false;
+      localSignOutRef.current = true;
 
       // Optional session-record cleanup: bounded and in the background. It can
       // never delay ending the authentication session.
       scheduleSessionCleanup();
 
       try {
-        const outcome = await Promise.race([
-          supabase.auth.signOut().then(() => "ok").catch(() => "ok"),
-          delay(SIGN_OUT_TIMEOUT_MS).then(() => "timeout" as const),
-        ]);
-        if (outcome === "timeout") {
-          // Provider did not answer in time: end the session on this device
-          // locally so the app never stays in a signed-in state, and flag /auth
-          // to show a safe "local session only" notice.
-          clearAuthTokens();
-          markLocalCleared();
+        let timedOut = false;
+        try {
+          const outcome = await Promise.race([
+            supabase.auth.signOut().then(() => "ok").catch(() => "ok"),
+            delay(SIGN_OUT_TIMEOUT_MS).then(() => "timeout" as const),
+          ]);
+          if (outcome === "timeout") {
+            // Provider did not answer in time: end the session on this device
+            // locally so the app never stays in a signed-in state, and flag /auth
+            // to show a safe "local session only" notice. Bump the generation so
+            // any in-flight restore/storage result can never re-authenticate.
+            timedOut = true;
+            authGenerationRef.current += 1;
+            clearAuthTokens();
+            markLocalCleared();
+          }
+        } finally {
+          // On the timeout path the provider may still fire a SIGNED_OUT later;
+          // it must not count twice, so keep the local latch set for this tab.
+          if (!timedOut) localSignOutRef.current = false;
         }
       } finally {
         if (!signedOutByListenerRef.current) setSignOutCount((c) => c + 1);
