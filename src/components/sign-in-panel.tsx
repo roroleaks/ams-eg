@@ -235,16 +235,26 @@ export function SignInPanel({
     setEmail(normalized);
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: normalized,
-        options: {
-          shouldCreateUser: true,
-          emailRedirectTo: `${window.location.origin}/auth/callback${
-            next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
-          }`,
-        },
-      });
-      if (error) throw error;
+      const result = await raceWithTimeout(
+        supabase.auth.signInWithOtp({
+          email: normalized,
+          options: {
+            shouldCreateUser: true,
+            emailRedirectTo: `${window.location.origin}/auth/callback${
+              next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
+            }`,
+          },
+        }),
+        CALLBACK_TIMEOUT_MS,
+        "TIMEOUT" as const,
+      );
+      if (result === "TIMEOUT") {
+        setError(
+          "Network error — we couldn't send the sign-in link. Check your connection and try again.",
+        );
+        return;
+      }
+      if (result.error) throw result.error;
       try {
         localStorage.setItem(LAST_EMAIL_KEY, normalized);
       } catch {
@@ -267,11 +277,19 @@ export function SignInPanel({
   async function onGoogle() {
     setError(null);
     setInfo(null);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: `${window.location.origin}/auth${
-        next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
-      }`,
-    });
+    const result = await raceWithTimeout(
+      lovable.auth.signInWithOAuth("google", {
+        redirect_uri: `${window.location.origin}/auth${
+          next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
+        }`,
+      }),
+      CALLBACK_TIMEOUT_MS,
+      "TIMEOUT" as const,
+    );
+    if (result === "TIMEOUT") {
+      setError("Google sign-in is taking too long. Check your connection and try again.");
+      return;
+    }
     if (result.error) setError(result.error.message ?? "Google sign-in failed");
   }
 
@@ -357,13 +375,19 @@ export function SignInPanel({
             />
           </div>
           {remembered && email === remembered && (
-            <button
-              type="button"
-              onClick={forgetEmail}
-              className="self-end text-xs text-muted-foreground hover:text-foreground hover:underline"
-            >
-              Forget this email
-            </button>
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={forgetEmail}
+                className="self-end text-xs text-muted-foreground hover:text-foreground hover:underline"
+              >
+                Forget this email
+              </button>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                This is only a remembered email address — you are not signed in yet. Sign in to
+                continue.
+              </p>
+            </div>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
           {info && <p className="text-sm text-muted-foreground">{info}</p>}

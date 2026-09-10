@@ -252,6 +252,19 @@ function Index() {
     return matchProducts(query, ready ? qVec : null);
   }, [query, qVec, ready]);
 
+  // A single, ordered view of the page's current background work. Products
+  // render immediately; this line (at most one message) explains what is still
+  // running so search control, results and literature never contradict each other.
+  const activeTask = useMemo(() => {
+    if (litLoading && litError === null && query.trim()) {
+      return { label: "Searching recent medical literature…" };
+    }
+    if (embedding && query.trim()) {
+      return { label: "Improving results with semantic search…" };
+    }
+    return null;
+  }, [litLoading, litError, embedding, query]);
+
   // Reset report on new complaint
   useEffect(() => {
     setReport(null);
@@ -294,14 +307,15 @@ function Index() {
           if (!cancelled) setLitLoading(false);
         });
     }, 600);
-    // Transport-level watchdog: guarantee the spinner always clears.
+    // Transport-level watchdog: the server call self-aborts after ~15s, so the
+    // spinner is always cleared shortly after by this 17s client cap.
     const watchdog = setTimeout(() => {
       if (cancelled) return;
       setLitLoading(false);
       if (!litSettledRef.current) {
         setLitError("Medical literature search timed out. Showing product results only.");
       }
-    }, 25000);
+    }, 17000);
     return () => {
       cancelled = true;
       clearTimeout(handle);
@@ -656,6 +670,7 @@ function Index() {
                   </button>
                 ))}
               </div>
+              <StatusLine task={activeTask} litError={litError} />
             </div>
           </div>
 
@@ -673,17 +688,6 @@ function Index() {
                     </h2>
                     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                       Matched against the AMS indication database
-                      {litLoading && (
-                        <span className="inline-flex items-center gap-1">
-                          <Loader2 className="h-3 w-3 animate-spin" /> Searching recent medical
-                          literature…
-                        </span>
-                      )}
-                      {litError && !litLoading && (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
-                          <Info className="h-3 w-3" /> {litError}
-                        </span>
-                      )}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -886,9 +890,40 @@ function SearchBox({
           }`}
         >
           <Sparkles className="h-3 w-3" />
-          {embedding ? "…" : ready && qVec ? "Semantic" : "Keyword"}
+          {ready && qVec ? "Semantic" : "Keyword"}
         </span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A single line that always says what the page is still doing. At most one
+ * background task is shown (literature wins over the semantic upgrade), and an
+ * optional literature error replaces the task message. Renders nothing when
+ * the page is fully ready, in a fixed-height slot to avoid layout shift.
+ */
+function StatusLine({
+  task,
+  litError,
+}: {
+  task: { label: string } | null;
+  litError: string | null;
+}) {
+  return (
+    <div className="min-h-[1.25rem]">
+      {litError && !task ? (
+        <p className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+          <Info className="h-3 w-3" /> {litError}
+        </p>
+      ) : task ? (
+        <p
+          className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"
+          aria-live="polite"
+        >
+          <Loader2 className="h-3 w-3 animate-spin" /> {task.label}
+        </p>
+      ) : null}
     </div>
   );
 }
