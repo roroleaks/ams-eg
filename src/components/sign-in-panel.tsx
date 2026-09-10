@@ -80,9 +80,8 @@ function friendlyAuthError(err: unknown): string {
 }
 
 /**
- * Passwordless email sign-in flow (magic link). Used both as a full page
- * (route /auth) and inside the AuthGate modal. Sign-in always goes through
- * the Supabase emailed magic link.
+ * Email + password sign-in / sign-up panel. Used both as a full page
+ * (route /auth) and inside the AuthGate modal.
  */
 export function SignInPanel({
   next = "/",
@@ -90,6 +89,7 @@ export function SignInPanel({
   showClose = false,
   onClose,
   mode = "signin",
+  onSwitchMode,
 }: {
   /** Same-origin destination to resume to after auth (page mode). */
   next?: string;
@@ -98,16 +98,18 @@ export function SignInPanel({
   /** Render a close/cancel control (modal mode). */
   showClose?: boolean;
   onClose?: () => void;
-  /** "signin" = existing user; "create" = new account via verification link. */
+  /** "signin" = existing user; "create" = new account. */
   mode?: "signin" | "create";
+  /** Lets the page-level caller (auth.tsx) own the mode toggle. */
+  onSwitchMode?: (m: "signin" | "create") => void;
 }) {
-  const [step, setStep] = useState<"email" | "sent">("email");
+  const [step, setStep] = useState<"email" | "sent" | "reset">("email");
   const [email, setEmail] = useState<string>(
     () => (typeof window !== "undefined" ? localStorage.getItem(LAST_EMAIL_KEY) ?? "" : ""),
   );
-  const [remembered, setRemembered] = useState<string | null>(() =>
-    typeof window !== "undefined" ? (localStorage.getItem(LAST_EMAIL_KEY) ?? null) : null,
-  );
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [fullName, setFullName] = useState("");
   const [knownEmails, setKnownEmails] = useState<string[]>(() => readKnownEmails());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +123,16 @@ export function SignInPanel({
       if (timerRef.current) window.clearInterval(timerRef.current);
     };
   }, []);
+
+  // Reset form state whenever the parent flips between Sign In / Sign Up.
+  useEffect(() => {
+    setStep("email");
+    setPassword("");
+    setPasswordConfirm("");
+    setFullName("");
+    setError(null);
+    setInfo(null);
+  }, [mode]);
 
   function startResendCountdown() {
     setResendIn(RESEND_COOLDOWN_S);
@@ -155,7 +167,9 @@ export function SignInPanel({
       return false;
     }
     if (!user) {
-      setError("Your session could not be verified. Please request a new sign-in link and try again.");
+      setError(
+        "Your session could not be verified. Please check your credentials and try again.",
+      );
       return false;
     }
     const profileQuery = supabase
@@ -208,7 +222,9 @@ export function SignInPanel({
       const err = params.get("error");
       if (err) {
         setError(
-          decodeURIComponent(params.get("error_description") ?? "Sign in failed. Please try again."),
+          decodeURIComponent(
+            params.get("error_description") ?? "Sign in failed. Please try again.",
+          ),
         );
         return;
       }
@@ -221,18 +237,21 @@ export function SignInPanel({
         );
         if (!cancelled) {
           if (res === "TIMEOUT") {
-            setError("This sign-in link could not be completed. Check your connection and try again.");
+            setError(
+              "This sign-in link could not be completed. Check your connection and try again.",
+            );
             setLoading(false);
           } else if (res.error) {
-            setError(res.error.message || "This sign-in link is invalid or has expired. Please try again.");
+            setError(
+              res.error.message ||
+                "This sign-in link is invalid or has expired. Please try again.",
+            );
             setLoading(false);
           } else {
             await finishAuthentication();
           }
         }
       }
-      // Fragment-delivered sessions (access_token / id_token) are completed by
-      // the centralized provider + /auth page — never re-handled here.
     })().catch((error) => {
       if (!cancelled) setError(friendlyAuthError(error));
     });
@@ -256,28 +275,100 @@ export function SignInPanel({
     }
   }
 
-  async function onRequestCode(e: React.FormEvent) {
+  // ────────────────────────────────────────────────
+  //  Sign-in with password
+  // ────────────────────────────────────────────────
+  async function onSubmitSignIn(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
     setError(null);
     setInfo(null);
-    const normalized = email.trim().toLowerCase();
-    if (!normalized) {
+    const normEmail = email.trim().toLowerCase();
+    if (!normEmail) {
       setError("Please enter your email address.");
       return;
     }
-    if (!EMAIL_RE.test(normalized)) {
+    if (!EMAIL_RE.test(normEmail)) {
       setError("Please enter a valid email address.");
       return;
     }
-    setEmail(normalized);
+    if (!password) {
+      setError("Please enter your password.");
+      return;
+    }
+    setEmail(normEmail);
     setLoading(true);
     try {
-      const result = await raceWithTimeout(
-        supabase.auth.signInWithOtp({
-          email: normalized,
+      const res = await raceWithTimeout(
+        supabase.auth.signInWithPassword({ email: normEmail, password }),
+        CALLBACK_TIMEOUT_MS,
+        "TIMEOUT" as const,
+      );
+      if (res === "TIMEOUT") {
+        setError("Sign-in timed out. Check your connection and try again.");
+        return;
+      }
+      if (res.error) {
+        const msg = res.error.message || "";
+        if (/email not confirmed/i.test(msg)) {
+          setError(
+            "Your email has not been verified yet. Please check your inbox for the verification link, or create a new account.",
+          );
+        } else if (/invalid login credentials|invalid_grant/i.test(msg)) {
+          setError("Incorrect email or password. Please try again.");
+        } else {
+          setError(msg);
+        }
+        return;
+      }
+      saveKnownEmail(normEmail);
+      await finishAuthentication();
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ────────────────────────────────────────────────
+  //  Create account
+  // ────────────────────────────────────────────────
+  async function onSubmitSignUp(e: React.FormEvent) {
+    e.preventDefault();
+    if (loading) return;
+    setError(null);
+    setInfo(null);
+    const normEmail = email.trim().toLowerCase();
+    const name = fullName.trim();
+    if (!name) {
+      setError("Please enter your name.");
+      return;
+    }
+    if (!normEmail) {
+      setError("Please enter your email address.");
+      return;
+    }
+    if (!EMAIL_RE.test(normEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== passwordConfirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setEmail(normEmail);
+    setLoading(true);
+    try {
+      const res = await raceWithTimeout(
+        supabase.auth.signUp({
+          email: normEmail,
+          password,
           options: {
-            shouldCreateUser: true,
+            data: { full_name: name },
             emailRedirectTo: `${window.location.origin}/auth/callback${
               next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
             }`,
@@ -286,20 +377,30 @@ export function SignInPanel({
         CALLBACK_TIMEOUT_MS,
         "TIMEOUT" as const,
       );
-      if (result === "TIMEOUT") {
-        setError(
-          "Network error — we couldn't send the sign-in link. Check your connection and try again.",
-        );
+      if (res === "TIMEOUT") {
+        setError("Sign-up timed out. Check your connection and try again.");
         return;
       }
-      if (result.error) throw result.error;
-      const list = saveKnownEmail(normalized);
+      if (res.error) {
+        const msg = res.error.message || "";
+        if (/already (registered|exist|sign up)/i.test(msg)) {
+          setError(
+            "An account with this email already exists. Please sign in instead.",
+          );
+        } else {
+          setError(msg);
+        }
+        return;
+      }
+      // If email confirmation is disabled the session is immediately available.
+      if (res.data?.session) {
+        saveKnownEmail(normEmail);
+        await finishAuthentication();
+        return;
+      }
+      // Email confirmation required — show success message.
+      const list = saveKnownEmail(normEmail);
       setKnownEmails(list);
-      setRemembered(normalized);
-      // Generic message — never reveals whether an account exists.
-      setInfo(
-        "If this email already has an account, you will be signed in. If it is new, an account will be created after email verification.",
-      );
       setStep("sent");
       startResendCountdown();
     } catch (err) {
@@ -309,6 +410,86 @@ export function SignInPanel({
     }
   }
 
+  // ────────────────────────────────────────────────
+  //  Forgot password (email reset)
+  // ────────────────────────────────────────────────
+  async function onSubmitReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (loading) return;
+    setError(null);
+    setInfo(null);
+    const normEmail = email.trim().toLowerCase();
+    if (!normEmail) {
+      setError("Please enter your email address.");
+      return;
+    }
+    if (!EMAIL_RE.test(normEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    setEmail(normEmail);
+    setLoading(true);
+    try {
+      const res = await raceWithTimeout(
+        supabase.auth.resetPasswordForEmail(normEmail, {
+          redirectTo: `${window.location.origin}/auth`,
+        }),
+        CALLBACK_TIMEOUT_MS,
+        "TIMEOUT" as const,
+      );
+      if (res === "TIMEOUT") {
+        setError("Timed out. Check your connection and try again.");
+        return;
+      }
+      if (res.error) throw res.error;
+      setStep("sent");
+      startResendCountdown();
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ────────────────────────────────────────────────
+  //  Resend from the "sent" screen
+  // ────────────────────────────────────────────────
+  async function onResend() {
+    if (loading || resendIn > 0) return;
+    setError(null);
+    setInfo(null);
+    const normEmail = email.trim().toLowerCase();
+    setLoading(true);
+    try {
+      const res = await raceWithTimeout(
+        supabase.auth.signInWithOtp({
+          email: normEmail,
+          options: {
+            shouldCreateUser: mode === "create",
+            emailRedirectTo: `${window.location.origin}/auth/callback${
+              next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
+            }`,
+          },
+        }),
+        CALLBACK_TIMEOUT_MS,
+        "TIMEOUT" as const,
+      );
+      if (res === "TIMEOUT") {
+        setError("Could not resend. Check your connection and try again.");
+        return;
+      }
+      if (res.error) throw res.error;
+      startResendCountdown();
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ────────────────────────────────────────────────
+  //  Google OAuth
+  // ────────────────────────────────────────────────
   async function onGoogle() {
     setError(null);
     setInfo(null);
@@ -328,14 +509,11 @@ export function SignInPanel({
     if (result.error) setError(result.error.message ?? "Google sign-in failed");
   }
 
-  function backToEmail() {
-    setStep("email");
-    setError(null);
-    setInfo(null);
-  }
-
+  // ────────────────────────────────────────────────
+  //  Saved-email helpers
+  // ────────────────────────────────────────────────
   function forgetEmail() {
-    const target = (email || remembered || "").trim().toLowerCase();
+    const target = email.trim().toLowerCase();
     const remaining = knownEmails.filter((e) => e !== target);
     writeKnownEmails(remaining);
     setKnownEmails(remaining);
@@ -344,7 +522,6 @@ export function SignInPanel({
     } catch {
       /* ignore */
     }
-    setRemembered(null);
     setEmail("");
   }
 
@@ -355,27 +532,44 @@ export function SignInPanel({
       writeKnownEmails(remaining);
       return remaining;
     });
-    if ((remembered ?? "").toLowerCase() === target) {
+    if (email.trim().toLowerCase() === target) {
       try {
         localStorage.removeItem(LAST_EMAIL_KEY);
       } catch {
         /* ignore */
       }
-      setRemembered(null);
-      if (email.trim().toLowerCase() === target) setEmail("");
+      setEmail("");
     }
   }
 
-  const sentHeadline = "Check your email";
-  const sentBodyStart = "We sent a secure sign-in link to your email address.";
+  function switchMode(m: "signin" | "create") {
+    onSwitchMode?.(m);
+    // Reset form state inline if parent doesn't own it (e.g. modal).
+    if (!onSwitchMode) {
+      setStep("email");
+      setPassword("");
+      setPasswordConfirm("");
+      setFullName("");
+      setError(null);
+      setInfo(null);
+    }
+  }
+
+  // ────────────────────────────────────────────────
+  //  Render
+  // ────────────────────────────────────────────────
+  const isSignup = mode === "create";
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center gap-3">
         <img src="/ams-logo.png" alt="AMS" className="h-10 w-10" />
         <div>
           <h1 className="text-lg font-semibold">AMS Clinical Reference</h1>
-          <p className="text-sm text-muted-foreground">Sign in to use the AMS Product Advisor</p>
+          <p className="text-sm text-muted-foreground">
+            {isSignup ? "Create your account" : "Sign in to your account"}
+          </p>
         </div>
         {showClose && onClose && (
           <button
@@ -399,7 +593,14 @@ export function SignInPanel({
         )}
       </div>
 
-      <Button type="button" variant="outline" className="mt-6 w-full" onClick={onGoogle} disabled={loading}>
+      {/* Google */}
+      <Button
+        type="button"
+        variant="outline"
+        className="mt-6 w-full"
+        onClick={onGoogle}
+        disabled={loading}
+      >
         Continue with Google
       </Button>
       <p className="mt-2 mb-4 text-[11px] leading-relaxed text-muted-foreground">
@@ -410,17 +611,15 @@ export function SignInPanel({
 
       <div className="relative my-4 text-center">
         <span className="bg-background px-2 text-xs uppercase tracking-wide text-muted-foreground">
-          or sign in with your work email
+          or continue with email
         </span>
       </div>
 
-      {step === "email" ? (
-        <form onSubmit={onRequestCode} className="space-y-4">
-          <p className="text-sm font-semibold text-foreground">
-            {mode === "create" ? "New to AMS?" : "Already have an account?"}
-          </p>
+      {/* ── EMAIL STEP (varies by mode) ────────────────────── */}
+      {step === "email" && mode === "signin" && (
+        <form onSubmit={onSubmitSignIn} className="space-y-4">
           <div>
-            <Label htmlFor="signin-email">Email address</Label>
+            <Label htmlFor="signin-email">Email</Label>
             {knownEmails.length > 0 && (
               <div className="mt-2 space-y-1.5">
                 <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -467,51 +666,208 @@ export function SignInPanel({
               placeholder="you@example.com"
             />
           </div>
-          {remembered && email === remembered && (
-            <div className="space-y-1">
+
+          <div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="signin-password">Password</Label>
               <button
                 type="button"
-                onClick={forgetEmail}
-                className="self-end text-xs text-muted-foreground hover:text-foreground hover:underline"
+                className="text-xs font-medium text-primary hover:underline"
+                onClick={() => {
+                  setError(null);
+                  setInfo(null);
+                  setStep("reset");
+                }}
               >
-                Forget this email
+                Forgot password?
               </button>
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                This is only a remembered email address — you are not signed in yet. Sign in to
-                continue.
-              </p>
             </div>
-          )}
+            <Input
+              id="signin-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+              placeholder="Your password"
+            />
+          </div>
+
           {error && <p className="text-sm text-destructive">{error}</p>}
           {info && <p className="text-sm text-muted-foreground">{info}</p>}
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            If this email already has an account, you will be signed in. If it is new, an account
-            will be created after email verification.
-          </p>
+
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {mode === "create" ? "Creating account…" : "Sending sign-in link…"}
+                Signing in…
               </>
             ) : (
-              <>
-                <Mail className="mr-2 h-4 w-4" />
-                {mode === "create" ? "Create account" : "Send me a sign-in link"}
-              </>
+              "Sign in"
             )}
           </Button>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Don't have an account?{" "}
+            <button
+              type="button"
+              className="font-medium text-primary hover:underline"
+              onClick={() => switchMode("create")}
+            >
+              Sign up
+            </button>
+          </p>
         </form>
-      ) : (
+      )}
+
+      {step === "email" && mode === "create" && (
+        <form onSubmit={onSubmitSignUp} className="space-y-4">
+          <div>
+            <Label htmlFor="signup-name">Full name</Label>
+            <Input
+              id="signup-name"
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              autoComplete="name"
+              placeholder="Your name"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="signup-email">Email</Label>
+            <Input
+              id="signup-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+              placeholder="you@example.com"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="signup-password">Password</Label>
+            <Input
+              id="signup-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="new-password"
+              placeholder="At least 6 characters"
+            />
+            {password.length > 0 && password.length < 6 && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {6 - password.length} more character{6 - password.length !== 1 ? "s" : ""} needed
+              </p>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="signup-confirm">Confirm password</Label>
+            <Input
+              id="signup-confirm"
+              type="password"
+              value={passwordConfirm}
+              onChange={(e) => setPasswordConfirm(e.target.value)}
+              required
+              autoComplete="new-password"
+              placeholder="Re-enter your password"
+            />
+            {passwordConfirm.length > 0 && password !== passwordConfirm && (
+              <p className="mt-1 text-[11px] text-destructive">Passwords do not match</p>
+            )}
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          {info && <p className="text-sm text-muted-foreground">{info}</p>}
+
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating account…
+              </>
+            ) : (
+              "Create account"
+            )}
+          </Button>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Already have an account?{" "}
+            <button
+              type="button"
+              className="font-medium text-primary hover:underline"
+              onClick={() => switchMode("signin")}
+            >
+              Sign in
+            </button>
+          </p>
+        </form>
+      )}
+
+      {/* ── FORGOT-PASSWORD STEP ──────────────────────────── */}
+      {step === "reset" && (
+        <form onSubmit={onSubmitReset} className="space-y-4">
+          <p className="text-sm text-foreground">
+            Enter your email address and we'll send you a link to reset your password.
+          </p>
+          <div>
+            <Label htmlFor="reset-email">Email</Label>
+            <Input
+              id="reset-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+              placeholder="you@example.com"
+            />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          {info && <p className="text-sm text-muted-foreground">{info}</p>}
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Sending…
+              </>
+            ) : (
+              "Send reset link"
+            )}
+          </Button>
+          <p className="text-center text-sm text-muted-foreground">
+            <button
+              type="button"
+              className="font-medium text-primary hover:underline"
+              onClick={() => {
+                setStep("email");
+                setPassword("");
+                setError(null);
+                setInfo(null);
+              }}
+            >
+              Back to sign in
+            </button>
+          </p>
+        </form>
+      )}
+
+      {/* ── SENT / CHECK-YOUR-EMAIL SCREEN ────────────────── */}
+      {step === "sent" && (
         <div className="space-y-4 rounded-lg border border-border/60 bg-muted/30 p-5 text-center">
           <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-primary/10">
             <Mail className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <p className="font-semibold text-foreground">{sentHeadline}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{sentBodyStart}</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Open the link in your email to continue to AMS Product Advisor.
+            <p className="font-semibold text-foreground">Check your email</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {mode === "create"
+                ? "We sent a verification link to your email address. Open it to activate your account."
+                : "We sent a password reset link to your email address. Open it to set a new password."}
             </p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -525,18 +881,30 @@ export function SignInPanel({
               onClick={() => {
                 setError(null);
                 setInfo(null);
-                onRequestCode(new Event("submit") as any);
+                onResend();
               }}
             >
-              {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend sign-in link"}
+              {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend email"}
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={backToEmail} disabled={loading}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStep("email");
+                setPassword("");
+                setError(null);
+                setInfo(null);
+              }}
+              disabled={loading}
+            >
               Use a different email
             </Button>
           </div>
         </div>
       )}
 
+      {/* Privacy */}
       <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground">
         Sign-in is restricted to authorised users. We record basic session activity (when you sign
         in/out and which articles you open) to keep the service secure and to improve it. We never

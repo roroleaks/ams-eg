@@ -133,7 +133,7 @@ function AuthPage() {
             Create account
           </button>
         </div>
-        <SignInPanel next={dest} mode={tab} />
+        <SignInPanel next={dest} mode={tab} onSwitchMode={setTab} />
         <p className="mt-6 text-center">
           <Link
             to="/"
