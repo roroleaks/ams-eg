@@ -15,6 +15,10 @@ async function requireAdmin(context: { supabase: any; userId: string }) {
   if (!data) throw new Error("Forbidden: admin only");
 }
 
+async function adminRpc(supabase: any, fn: string, args?: Record<string, unknown>) {
+  return supabase.rpc(fn, args);
+}
+
 async function log(
   admin: any,
   {
@@ -100,8 +104,7 @@ export const createDocument = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await requireAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: doc, error } = await supabaseAdmin
+    const { data: doc, error } = await context.supabase
       .from("documents")
       .insert({
         title: data.title,
@@ -113,7 +116,7 @@ export const createDocument = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) throw new Error(error.message);
-    await log(supabaseAdmin, {
+    await log(context.supabase, {
       document_id: doc.id,
       action: "upload",
       status: "success",
@@ -128,18 +131,17 @@ export const deleteDocument = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await requireAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: doc } = await supabaseAdmin
+    const { data: doc } = await context.supabase
       .from("documents")
       .select("storage_path, filename")
       .eq("id", data.id)
       .single();
     if (doc?.storage_path) {
-      await supabaseAdmin.storage.from("pdfs").remove([doc.storage_path]);
+      await context.supabase.storage.from("pdfs").remove([doc.storage_path]);
     }
-    const { error } = await supabaseAdmin.from("documents").delete().eq("id", data.id);
+    const { error } = await context.supabase.from("documents").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
-    await log(supabaseAdmin, {
+    await log(context.supabase, {
       document_id: data.id,
       action: "delete",
       status: "success",
@@ -162,18 +164,17 @@ export const replaceDocumentVersion = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await requireAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: prev } = await supabaseAdmin
+    const { data: prev } = await context.supabase
       .from("documents")
       .select("version, storage_path")
       .eq("id", data.id)
       .single();
     if (prev?.storage_path && prev.storage_path !== data.storage_path) {
-      await supabaseAdmin.storage.from("pdfs").remove([prev.storage_path]);
+      await context.supabase.storage.from("pdfs").remove([prev.storage_path]);
     }
     // Delete old chunks
-    await supabaseAdmin.from("document_chunks").delete().eq("document_id", data.id);
-    const { error } = await supabaseAdmin
+    await context.supabase.from("document_chunks").delete().eq("document_id", data.id);
+    const { error } = await context.supabase
       .from("documents")
       .update({
         filename: data.filename,
@@ -185,7 +186,7 @@ export const replaceDocumentVersion = createServerFn({ method: "POST" })
       })
       .eq("id", data.id);
     if (error) throw new Error(error.message);
-    await log(supabaseAdmin, {
+    await log(context.supabase, {
       document_id: data.id,
       action: "replace",
       status: "success",
@@ -259,23 +260,22 @@ export const reindexDocument = createServerFn({ method: "POST" })
     const started = Date.now();
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const { data: doc, error: docErr } = await supabaseAdmin
+    const { data: doc, error: docErr } = await context.supabase
       .from("documents")
       .select("id, storage_path, filename")
       .eq("id", data.id)
       .single();
     if (docErr || !doc) throw new Error(docErr?.message ?? "Document not found");
 
-    await supabaseAdmin
+    await context.supabase
       .from("documents")
       .update({ status: "processing", status_message: null })
       .eq("id", data.id);
 
     try {
       // 1. Download PDF
-      const { data: fileData, error: dlErr } = await supabaseAdmin.storage
+      const { data: fileData, error: dlErr } = await context.supabase.storage
         .from("pdfs")
         .download(doc.storage_path);
       if (dlErr || !fileData) throw new Error(`Download: ${dlErr?.message ?? "empty"}`);
@@ -295,7 +295,7 @@ export const reindexDocument = createServerFn({ method: "POST" })
       if (allChunks.length === 0) throw new Error("No text extracted from PDF");
 
       // 4. Clear old chunks
-      await supabaseAdmin.from("document_chunks").delete().eq("document_id", doc.id);
+      await context.supabase.from("document_chunks").delete().eq("document_id", doc.id);
 
       // 5. Embed in batches of 64
       const BATCH = 64;
@@ -312,12 +312,12 @@ export const reindexDocument = createServerFn({ method: "POST" })
           content: c.content,
           embedding: packEmbedding(vecs[j]),
         }));
-        const { error: insErr } = await supabaseAdmin.from("document_chunks").insert(rows);
+        const { error: insErr } = await context.supabase.from("document_chunks").insert(rows);
         if (insErr) throw new Error(`Insert chunks: ${insErr.message}`);
       }
 
       // 6. Mark indexed
-      await supabaseAdmin
+      await context.supabase
         .from("documents")
         .update({
           status: "indexed",
@@ -328,7 +328,7 @@ export const reindexDocument = createServerFn({ method: "POST" })
         })
         .eq("id", doc.id);
 
-      await log(supabaseAdmin, {
+      await log(context.supabase, {
         document_id: doc.id,
         action: "reindex",
         status: "success",
@@ -340,11 +340,11 @@ export const reindexDocument = createServerFn({ method: "POST" })
       return { ok: true, chunks: allChunks.length, pages: totalPages };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      await supabaseAdmin
+      await context.supabase
         .from("documents")
         .update({ status: "failed", status_message: msg })
         .eq("id", doc.id);
-      await log(supabaseAdmin, {
+      await log(context.supabase, {
         document_id: doc.id,
         action: "reindex",
         status: "error",
@@ -362,11 +362,17 @@ export const listUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await requireAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: users, error } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 });
-    if (error) throw new Error(error.message);
-    const { data: roles } = await supabaseAdmin.from("user_roles").select("user_id, role");
-    const { data: perms } = await supabaseAdmin.from("user_permissions").select("*");
+    const { data: authUsers, error: usersErr } = await adminRpc(context.supabase, "admin_list_users");
+    if (usersErr) throw new Error(usersErr.message);
+    const users = (authUsers ?? []) as Array<{
+      id: string;
+      email: string | null;
+      created_at: string | null;
+      last_sign_in_at: string | null;
+      email_confirmed_at: string | null;
+    }>;
+    const { data: roles } = await context.supabase.from("user_roles").select("user_id, role");
+    const { data: perms } = await context.supabase.from("user_permissions").select("*");
     const rolesByUser = new Map<string, string[]>();
     (roles ?? []).forEach((r) => {
       const arr = rolesByUser.get(r.user_id) ?? [];
@@ -376,7 +382,7 @@ export const listUsers = createServerFn({ method: "GET" })
     const permsByUser = new Map<string, any>();
     (perms ?? []).forEach((p) => permsByUser.set(p.user_id, p));
     return {
-      users: users.users.map((u) => ({
+      users: users.map((u) => ({
         id: u.id,
         email: u.email,
         created_at: u.created_at,
@@ -401,13 +407,12 @@ export const setUserRole = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await requireAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     if (data.grant) {
-      await supabaseAdmin
+      await context.supabase
         .from("user_roles")
         .upsert({ user_id: data.user_id, role: data.role }, { onConflict: "user_id,role" });
     } else {
-      await supabaseAdmin
+      await context.supabase
         .from("user_roles")
         .delete()
         .eq("user_id", data.user_id)
@@ -436,8 +441,7 @@ export const setUserPermissions = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await requireAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("user_permissions").upsert(
+    const { error } = await context.supabase.from("user_permissions").upsert(
       {
         user_id: data.user_id,
         can_search: data.can_search,
@@ -474,8 +478,7 @@ export const setUserStatus = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await requireAdmin(context);
     if (data.user_id === context.userId) throw new Error("You cannot change your own account status");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
+    const { error } = await context.supabase
       .from("profiles")
       .update({ status: data.status })
       .eq("id", data.user_id);
@@ -494,8 +497,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await requireAdmin(context);
     if (data.user_id === context.userId) throw new Error("You cannot delete yourself");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
+    const { error } = await adminRpc(context.supabase, "admin_delete_user", { p_user_id: data.user_id });
     if (error) throw new Error(error.message);
     await audit(context, { action: "user_deleted", target_user_id: data.user_id });
     return { ok: true };
@@ -582,15 +584,14 @@ export const listRegisteredUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await requireAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: profiles }, { data: authUsers }, { data: favs }, { data: roles }] =
       await Promise.all([
-        supabaseAdmin.from("profiles").select("*").order("created_at", { ascending: false }),
-        supabaseAdmin.auth.admin.listUsers({ perPage: 500 }),
-        supabaseAdmin.from("favorites").select("user_id, item_type, label"),
-        supabaseAdmin.from("user_roles").select("user_id, role"),
+        context.supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+        adminRpc(context.supabase, "admin_list_users"),
+        context.supabase.from("favorites").select("user_id, item_type, label"),
+        context.supabase.from("user_roles").select("user_id, role"),
       ]);
-    const authById = new Map((authUsers?.users ?? []).map((u: any) => [u.id, u]));
+    const authById = new Map<string, any>((authUsers ?? []).map((u: any) => [u.id, u]));
     const favByUser = new Map<string, string[]>();
     (favs ?? []).forEach((f: any) => {
       if (f.item_type !== "product") return;
@@ -629,7 +630,6 @@ export const userAnalytics = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await requireAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = Date.now();
     const dayAgo = new Date(now - 86400_000).toISOString();
     const weekAgo = new Date(now - 7 * 86400_000).toISOString();
@@ -638,12 +638,12 @@ export const userAnalytics = createServerFn({ method: "GET" })
 
     const [{ data: profiles }, { data: sessions }, { data: searches }, { data: history }] =
       await Promise.all([
-        supabaseAdmin
+        context.supabase
           .from("profiles")
           .select("id, created_at, last_sign_in_at, last_active_at, status, search_count, report_count"),
-        supabaseAdmin.from("user_sessions").select("user_id, started_at, last_seen_at, duration_seconds, ended_at").limit(20000),
-        supabaseAdmin.from("search_analytics").select("query, user_id, created_at").limit(10000),
-        supabaseAdmin.from("search_history").select("products").limit(5000),
+        context.supabase.from("user_sessions").select("user_id, started_at, last_seen_at, duration_seconds, ended_at").limit(20000),
+        context.supabase.from("search_analytics").select("query, user_id, created_at").limit(10000),
+        context.supabase.from("search_history").select("products").limit(5000),
       ]);
 
     const p = profiles ?? [];
@@ -714,8 +714,7 @@ export const exportRegisteredUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await requireAdmin(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: profiles } = await supabaseAdmin
+    const { data: profiles } = await context.supabase
       .from("profiles")
       .select("full_name, email, created_at, last_login_at, search_count, report_count")
       .order("created_at", { ascending: false });

@@ -33,17 +33,13 @@ const LiteratureSchema = z.object({
 const LOCK_KEY = "library_build_lock";
 const LOCK_TTL_MS = 5 * 60_000;
 
-async function adminContext(context: { supabase: unknown; userId: string }) {
-  const supabase = context.supabase as {
-    rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: unknown }>;
-  };
-  const { data } = await supabase.rpc("has_role", {
+async function adminContext(context: { supabase: any; userId: string }) {
+  const { data } = await context.supabase.rpc("has_role", {
     _user_id: context.userId,
     _role: "admin",
   });
   if (data !== true) throw new Error("Admin access required");
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  return supabaseAdmin;
+  return context.supabase;
 }
 
 type Admin = Awaited<ReturnType<typeof adminContext>>;

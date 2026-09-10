@@ -284,8 +284,7 @@ export const purgeActivity = createServerFn({ method: "POST" })
       .eq("key", "activity_retention_days")
       .maybeSingle();
     const days = Number(setting?.value ?? 90);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await context.supabase
       .from("activity_events")
       .delete()
       .eq("immutable", false)
