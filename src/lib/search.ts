@@ -170,13 +170,3 @@ export function hybridSearch(
 export function search(query: string, limit = 50): SearchResult[] {
   return hybridSearch(query, null, limit);
 }
-
-export function getAllProducts(): string[] {
-  const set = new Set<string>();
-  chunks.forEach((c) => c.product && set.add(c.product));
-  return [...set].sort();
-}
-
-export function totalChunks() {
-  return chunks.length;
-}

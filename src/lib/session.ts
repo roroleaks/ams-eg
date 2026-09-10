@@ -124,16 +124,3 @@ export function useSessionTracker(enabled: boolean) {
     };
   }, [enabled]);
 }
-
-/** Ends the current tracked session (used right before sign-out). */
-export async function endTrackedSession(): Promise<void> {
-  const key = sessionKey();
-  if (key) {
-    try {
-      await endUserSession({ data: { session_key: key } });
-    } catch {
-      /* best-effort */
-    }
-  }
-  clearSessionKey();
-}

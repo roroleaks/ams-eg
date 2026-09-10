@@ -12,8 +12,6 @@ export const AUTH_RESTORE_TIMEOUT_MS = 5000;
 export const CALLBACK_TIMEOUT_MS = 10000;
 /** Hard cap for the profile upsert after a successful sign-in. */
 export const PROFILE_UPSERT_TIMEOUT_MS = 5000;
-/** Hard cap for optional background activity/session writes. */
-export const ACTIVITY_TIMEOUT_MS = 1500;
 
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

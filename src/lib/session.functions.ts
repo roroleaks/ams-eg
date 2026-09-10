@@ -203,25 +203,3 @@ export const sessionOverview = createServerFn({ method: "GET" })
       },
     };
   });
-
-export const listUserSessions = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z
-      .object({ user_id: z.string().uuid(), limit: z.number().int().min(1).max(500).default(100) })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    await requireAdmin(context);
-    const { data: rows, error } = await context.supabase
-      .from("user_sessions")
-      .select("id, session_key, started_at, last_seen_at, ended_at, duration_seconds, device_type, browser, operating_system")
-      .eq("user_id", data.user_id)
-      .order("started_at", { ascending: false })
-      .limit(data.limit);
-    if (error) {
-      if (isMissingRelationError(error)) return { sessions: [], degraded: true };
-      throw new Error(error.message);
-    }
-    return { sessions: (rows ?? []) as any[] };
-  });
