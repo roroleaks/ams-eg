@@ -248,7 +248,7 @@ function Index() {
     const handle = setTimeout(async () => {
       try {
         const { vec } = await embedFn({ data: { query: q } });
-        if (mySeq === seqRef.current) setQVec(new Float32Array(vec));
+        if (mySeq === seqRef.current) setQVec(vec ? new Float32Array(vec) : null);
       } catch {
         if (mySeq === seqRef.current) setQVec(null);
       } finally {

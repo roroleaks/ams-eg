@@ -30,7 +30,10 @@ export interface ReportInput {
 /** Builds the Clinical Product Report markdown via the Lovable AI gateway. */
 export async function generateProductReport(data: ReportInput): Promise<string> {
   const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("Missing LOVABLE_API_KEY");
+  if (!key)
+    throw new Error(
+      "AI is unavailable in this preview. Open the published app to generate reports.",
+    );
 
   const today = new Date().toLocaleDateString("en-US", {
     year: "numeric",

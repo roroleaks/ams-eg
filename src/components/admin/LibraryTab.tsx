@@ -71,7 +71,7 @@ export function LibraryTab() {
             let qVec: Float32Array | null = null;
             try {
               const { vec } = await embedFn({ data: { query: complaint } });
-              qVec = new Float32Array(vec);
+              qVec = vec ? new Float32Array(vec) : null;
             } catch {
               qVec = null;
             }

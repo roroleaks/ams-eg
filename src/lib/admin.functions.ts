@@ -259,7 +259,10 @@ export const reindexDocument = createServerFn({ method: "POST" })
     await requireAdmin(context);
     const started = Date.now();
     const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+    if (!apiKey)
+      throw new Error(
+        "AI is unavailable in this preview. Open the published app to index documents.",
+      );
 
     const { data: doc, error: docErr } = await context.supabase
       .from("documents")

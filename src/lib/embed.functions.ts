@@ -18,7 +18,9 @@ export const embedQuery = createServerFn({ method: "POST" })
     enforceRateLimit(clientKey("embed", caller.userId), caller.userId ? 240 : 90, 5 * 60_000);
 
     const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("Missing LOVABLE_API_KEY");
+    // AI embeddings only exist in the deployed (published) runtime. Lovable's
+    // preview has no key, so degrade to keyword search instead of hard-failing.
+    if (!key) return { vec: null as unknown as number[] };
     const res = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
       method: "POST",
       headers: {
