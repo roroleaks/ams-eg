@@ -87,7 +87,7 @@ const SHORTCUTS: { label: string; hint: string }[] = [
   { label: "Menopause", hint: "Climacteric support" },
 ];
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/_authenticated/")({
   validateSearch: (s: Record<string, unknown>): { q?: string } =>
     typeof s.q === "string" && s.q ? { q: s.q } : {},
   head: () => ({
