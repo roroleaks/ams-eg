@@ -10,6 +10,7 @@
  *    within the same session do not inflate the metrics.
  */
 import { recordActivity } from "@/lib/activity.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { normalizeComplaint } from "@/lib/activity-privacy";
 import type { EventInputType } from "@/lib/activity.schemas";
 
