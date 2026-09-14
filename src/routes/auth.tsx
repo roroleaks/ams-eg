@@ -24,6 +24,14 @@ function AuthPage() {
   const [expired, setExpired] = useState(false);
   const [localCleared, setLocalCleared] = useState(false);
 
+  // Returning users keep their session: if they are still signed in and were
+  // sent here on the way to a page, take them straight there.
+  useEffect(() => {
+    if (status !== "authenticated" || signingOut) return;
+    if (!next) return;
+    window.location.replace(dest);
+  }, [status, signingOut, next, dest]);
+
   // A one-shot notice when a sign-out could only clear the device locally (the
   // provider was unreachable). It never claims the server session was ended.
   useEffect(() => {
