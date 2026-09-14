@@ -98,7 +98,7 @@ function AuthPage() {
                 <User className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="font-medium text-foreground">Already signed in</p>
+                <p className="font-medium text-foreground">Welcome back</p>
                 <p className="text-sm text-muted-foreground">{maskEmail(user.email)}</p>
               </div>
             </div>
@@ -110,7 +110,7 @@ function AuthPage() {
               onClick={() => window.location.href = dest}
               disabled={signingOut}
             >
-              Continue to application
+              Continue to AMS Clinical Reference
             </Button>
             <Button
               variant="outline"
@@ -134,9 +134,9 @@ function AuthPage() {
           </div>
 
           <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground text-center">
-            Sign-in is restricted to authorised users. We record basic session activity (when you sign
-            in/out and which articles you open) to keep the service secure and to improve it. We never
-            sell or share your personal data.
+            Access is restricted to authorised clinicians. We log only the activity needed to keep this
+            workspace secure and to improve your experience — never patient data, and never for advertising.
+            Your information is not sold or shared.
           </p>
         </Card>
       </div>
@@ -184,9 +184,9 @@ function AuthPage() {
         <OtpSignIn next={dest} />
 
         <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground text-center">
-          Sign-in is restricted to authorised users. We record basic session activity (when you sign
-          in/out and which articles you open) to keep the service secure and to improve it. We never
-          sell or share your personal data.
+          Access is restricted to authorised clinicians. We log only the activity needed to keep this
+          workspace secure and to improve your experience — never patient data, and never for advertising.
+          Your information is not sold or shared.
         </p>
       </Card>
     </div>
