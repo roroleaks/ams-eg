@@ -338,6 +338,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void restoreFnRef.current();
   }, []);
 
+  // "Stay signed in" unchecked: end the local session when this tab closes.
+  // The provider session itself is untouched; only this device's tokens go.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let stay = true;
+    try {
+      stay = localStorage.getItem("ams-stay-signed-in") !== "0";
+    } catch {
+      /* ignore */
+    }
+    if (stay) return;
+    const onPageHide = () => clearAuthTokens();
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [status]);
+
   const signingOut = status === "signing_out";
 
   return (

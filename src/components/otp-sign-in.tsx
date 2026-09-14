@@ -25,6 +25,16 @@ function friendlyAuthError(err: unknown): string {
  * Magic-link sign-in. Sends a secure sign-in link to the email.
  * The link returns the user to /auth/callback which completes the sign-in.
  */
+export const STAY_SIGNED_IN_KEY = "ams-stay-signed-in";
+
+function readStaySignedIn(): boolean {
+  try {
+    return localStorage.getItem(STAY_SIGNED_IN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 export function OtpSignIn({ next = "/" }: { next?: string }) {
   const [step, setStep] = useState<"email" | "check-email">("email");
   const [email, setEmail] = useState("");
@@ -32,7 +42,17 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
+  const [staySignedIn, setStaySignedInState] = useState<boolean>(readStaySignedIn);
   const timerRef = useRef<number | null>(null);
+
+  function setStaySignedIn(v: boolean) {
+    setStaySignedInState(v);
+    try {
+      localStorage.setItem(STAY_SIGNED_IN_KEY, v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -172,6 +192,21 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
               We&apos;ll email you a single-use, secure access link. No password required.
             </p>
           </div>
+          <label className="flex items-start gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={staySignedIn}
+              onChange={(e) => setStaySignedIn(e.target.checked)}
+              disabled={loading}
+              className="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span>
+              Stay signed in on this device
+              <span className="block text-xs">
+                Untick on shared or public computers — you&apos;ll be signed out when you close this tab.
+              </span>
+            </span>
+          </label>
           {error && (
             <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-start gap-2">
               <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
