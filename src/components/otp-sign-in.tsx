@@ -25,6 +25,16 @@ function friendlyAuthError(err: unknown): string {
  * Magic-link sign-in. Sends a secure sign-in link to the email.
  * The link returns the user to /auth/callback which completes the sign-in.
  */
+export const STAY_SIGNED_IN_KEY = "ams-stay-signed-in";
+
+function readStaySignedIn(): boolean {
+  try {
+    return localStorage.getItem(STAY_SIGNED_IN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 export function OtpSignIn({ next = "/" }: { next?: string }) {
   const [step, setStep] = useState<"email" | "check-email">("email");
   const [email, setEmail] = useState("");
@@ -32,7 +42,17 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
+  const [staySignedIn, setStaySignedInState] = useState<boolean>(readStaySignedIn);
   const timerRef = useRef<number | null>(null);
+
+  function setStaySignedIn(v: boolean) {
+    setStaySignedInState(v);
+    try {
+      localStorage.setItem(STAY_SIGNED_IN_KEY, v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     return () => {
