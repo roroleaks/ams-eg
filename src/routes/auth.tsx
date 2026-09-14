@@ -23,6 +23,7 @@ function AuthPage() {
   const checking = status === "loading";
   const [expired, setExpired] = useState(false);
   const [localCleared, setLocalCleared] = useState(false);
+  const [hasStoredSession, setHasStoredSession] = useState(false);
 
   // Returning users keep their session: if they are still signed in and were
   // sent here on the way to a page, take them straight there.
