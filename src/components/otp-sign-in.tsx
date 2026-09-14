@@ -169,7 +169,7 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
               aria-describedby="email-hint"
             />
             <p id="email-hint" className="text-xs text-muted-foreground">
-              We'll email you a secure sign-in link — no password needed.
+              We&apos;ll email you a single-use, secure access link. No password required.
             </p>
           </div>
           {error && (
@@ -180,7 +180,7 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
           )}
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-            Email me a sign-in link
+            Send secure access link
           </Button>
         </form>
       ) : step === "check-email" ? (
@@ -189,17 +189,19 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-primary/20">
               <Mail className="h-6 w-6 text-primary" />
             </div>
-            <p className="mt-4 font-semibold text-foreground">Check your email</p>
+            <p className="mt-4 font-semibold text-foreground">Secure access link sent</p>
             <p className="mt-2 text-sm text-muted-foreground">
-              We sent a secure sign-in link to <span className="font-medium text-foreground">{maskedEmail}</span>.
+              We&apos;ve emailed a one-time sign-in link to{" "}
+              <span className="font-medium text-foreground">{maskedEmail}</span>.
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Open the link in the email to continue. The link expires in 10 minutes.
+              Open the email on this device and tap the link to enter your AMS clinical reference workspace.
+              The link expires in 10 minutes.
             </p>
           </div>
 
           <p className="text-center text-sm text-muted-foreground">
-            Didn't receive it?{" "}
+            Didn&apos;t receive it?{" "}
             {resendIn > 0 ? (
               <span>Resend in {resendIn}s</span>
             ) : (
@@ -209,14 +211,14 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
                 disabled={loading}
                 className="font-medium text-primary hover:underline"
               >
-                Resend sign-in link
+                Resend access link
               </button>
             )}
           </p>
 
           {info && (
             <p className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary text-center">
-              {info}
+              A new access link is on its way.
             </p>
           )}
           {error && (
