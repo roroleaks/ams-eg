@@ -9,6 +9,7 @@ import { consumeLocalCleared } from "@/lib/sign-out";
 import { Loader2, LogOut, User } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
+  ssr: false,
   head: () => ({ meta: [{ title: "Sign in — AMS" }] }),
   validateSearch: (s: Record<string, unknown>): { next?: string } =>
     typeof s.next === "string" && s.next ? { next: s.next } : {},

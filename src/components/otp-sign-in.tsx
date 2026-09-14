@@ -56,10 +56,14 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
 
   async function sendLink() {
     const normEmail = email.trim().toLowerCase();
+    const dest = safeNext(next || "/");
     const res = await raceWithTimeout(
       supabase.auth.signInWithOtp({
         email: normEmail,
-        options: { shouldCreateUser: true },
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(dest)}`,
+        },
       }),
       CALLBACK_TIMEOUT_MS,
       "TIMEOUT" as const,
