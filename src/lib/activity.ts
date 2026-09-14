@@ -10,6 +10,18 @@
  *    within the same session do not inflate the metrics.
  */
 import { recordActivity } from "@/lib/activity.functions";
+/** True when this device still holds a Supabase session token. */
+function hasStoredSession(): boolean {
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && /^sb-.*-auth-token/.test(key)) return true;
+    }
+  } catch {
+    /* storage unavailable — fall through */
+  }
+  return false;
+}
 import { normalizeComplaint } from "@/lib/activity-privacy";
 import type { EventInputType } from "@/lib/activity.schemas";
 
@@ -106,6 +118,10 @@ export function track(input: TrackInput): void {
       set.add(key);
       remember(set);
     }
+    // Only send when a stored session exists: the recording endpoint requires
+    // a bearer token, so a signed-out client would otherwise surface an
+    // "Unauthorized" runtime error from a purely analytical call.
+    if (!hasStoredSession()) return;
     void recordActivity({
       data: { ...rest, complaint_id, session_id: sessionId },
     }).catch(() => {});
