@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { OtpSignIn } from "@/components/otp-sign-in";
 import { useAuth } from "@/lib/auth-context";
 import { consumeLocalCleared } from "@/lib/sign-out";
-import { Loader2 } from "lucide-react";
+import { Loader2, LogOut, User } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — AMS" }] }),
@@ -22,19 +22,18 @@ function safeNext(next: string): string {
   return next;
 }
 
-function hasStoredAuthToken(): boolean {
-  if (typeof localStorage === "undefined") return false;
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && key.startsWith("sb-") && key.endsWith("-auth-token")) return true;
-  }
-  return false;
+function maskEmail(email: string | null): string {
+  if (!email) return "";
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return email;
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  return `${local[0]}${local.slice(1, -1).replace(/./g, "*")}${local[local.length - 1]}@${domain}`;
 }
 
 function AuthPage() {
   const { next } = Route.useSearch();
   const dest = safeNext(next || "/");
-  const { status, user, signingOut, restoreFailed, retryRestore } = useAuth();
+  const { status, user, signingOut, restoreFailed, retryRestore, signOut } = useAuth();
   const checking = status === "loading";
   const [expired, setExpired] = useState(false);
   const [localCleared, setLocalCleared] = useState(false);
@@ -61,7 +60,7 @@ function AuthPage() {
     if (status !== "unauthenticated") return;
     let mounted = true;
     const t = window.setTimeout(() => {
-      if (mounted) setExpired(hasStoredAuthToken());
+      if (mounted) setExpired(true);
     }, 50);
     return () => {
       mounted = false;
@@ -74,6 +73,72 @@ function AuthPage() {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <span className="sr-only">Checking your sign-in status…</span>
+      </div>
+    );
+  }
+
+  // Already signed in — show account options
+  if (status === "authenticated" && user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+        <Card className="w-full max-w-md p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <img src="/ams-logo.png" alt="AMS" className="h-10 w-10" />
+            <div>
+              <h1 className="text-lg font-semibold text-foreground">AMS Clinical Reference</h1>
+              <p className="text-sm text-muted-foreground">
+                Sign in to access the clinical decision-support application
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-6 p-4 rounded-lg border border-primary/30 bg-primary/10">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/20">
+                <User className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium text-foreground">Already signed in</p>
+                <p className="text-sm text-muted-foreground">{maskEmail(user.email)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <Button
+              className="w-full"
+              onClick={() => window.location.href = dest}
+              disabled={signingOut}
+            >
+              Continue to application
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => void signOut("/auth?next=%2F")}
+              disabled={signingOut}
+            >
+              {signingOut ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Signing out…
+                </>
+              ) : (
+                <>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out and use another account
+                </>
+              )}
+            </Button>
+          </div>
+
+          <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground text-center">
+            Sign-in is restricted to authorised users. We record basic session activity (when you sign
+            in/out and which articles you open) to keep the service secure and to improve it. We never
+            sell or share your personal data.
+          </p>
+        </Card>
       </div>
     );
   }
@@ -118,7 +183,7 @@ function AuthPage() {
 
         <OtpSignIn next={dest} />
 
-        <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground text-center">
           Sign-in is restricted to authorised users. We record basic session activity (when you sign
           in/out and which articles you open) to keep the service secure and to improve it. We never
           sell or share your personal data.

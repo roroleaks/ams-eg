@@ -4,7 +4,7 @@ import { lovable } from "@/integrations/lovable";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Loader2, Mail, ArrowLeft, ShieldCheck } from "lucide-react";
+import { Loader2, Mail, ArrowLeft, ShieldCheck, AlertCircle } from "lucide-react";
 import {
   AUTH_RESTORE_TIMEOUT_MS,
   CALLBACK_TIMEOUT_MS,
@@ -24,6 +24,13 @@ function safeNext(next: string | null | undefined): string {
   return next;
 }
 
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return email;
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  return `${local[0]}${local.slice(1, -1).replace(/./g, "*")}${local[local.length - 1]}@${domain}`;
+}
+
 function friendlyAuthError(err: unknown): string {
   if (err instanceof Error && err.message) {
     if (/(fetch failed|network|load failed|timeout|connection|socket)/i.test(err.message)) {
@@ -35,12 +42,12 @@ function friendlyAuthError(err: unknown): string {
 }
 
 /**
- * Passwordless email-code (OTP) sign-in. Sends a 6-digit code to the email,
- * verifies it, then resumes to `next`. A magic link in the same email also
- * works (handled by /auth/callback).
+ * Magic-link sign-in. Sends a secure sign-in link to the email.
+ * The link returns the user to /auth/callback which completes the sign-in.
+ * A 6-digit code in the same email can also be entered manually as a fallback.
  */
 export function OtpSignIn({ next = "/" }: { next?: string }) {
-  const [step, setStep] = useState<"email" | "verify">("email");
+  const [step, setStep] = useState<"email" | "check-email" | "verify">("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -74,7 +81,7 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
     }, 1000);
   }
 
-  async function sendCode() {
+  async function sendLink() {
     const normEmail = email.trim().toLowerCase();
     const res = await raceWithTimeout(
       supabase.auth.signInWithOtp({
@@ -117,8 +124,8 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
     }
     setLoading(true);
     try {
-      if (await sendCode()) {
-        setStep("verify");
+      if (await sendLink()) {
+        setStep("check-email");
         startResendCountdown();
       }
     } catch (err) {
@@ -179,7 +186,7 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
       if (res.error) {
         const msg = res.error.message || "";
         if (/expired|invalid/i.test(msg)) {
-          setError("That code is invalid or has expired. Request a new one and try again.");
+          setError("That code is invalid or has expired. Request a new link and try again.");
         } else {
           setError(friendlyAuthError(res.error));
         }
@@ -200,9 +207,9 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
     setInfo(null);
     setLoading(true);
     try {
-      if (await sendCode()) {
+      if (await sendLink()) {
         setCode("");
-        setInfo("A new code is on its way.");
+        setInfo("A new sign-in link is on its way.");
         startResendCountdown();
       }
     } catch (err) {
@@ -232,10 +239,12 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
     // Success navigates away via the broker flow.
   }
 
+  const maskedEmail = maskEmail(email);
+
   return (
     <div>
       {step === "email" ? (
-        <form onSubmit={onSubmitEmail} className="space-y-4">
+        <form onSubmit={onSubmitEmail} className="space-y-4" noValidate>
           <div className="space-y-2">
             <Label htmlFor="otp-email">Work email</Label>
             <Input
@@ -247,37 +256,110 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
               onChange={(e) => setEmail(e.target.value)}
               disabled={loading}
               required
+              aria-describedby="email-hint"
             />
-            <p className="text-xs text-muted-foreground">
-              We'll email you a 6-digit sign-in code — no password needed.
+            <p id="email-hint" className="text-xs text-muted-foreground">
+              We'll email you a secure sign-in link — no password needed.
             </p>
           </div>
           {error && (
-            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
               {error}
             </p>
           )}
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-            Email me a code
+            Email me a sign-in link
           </Button>
         </form>
+      ) : step === "check-email" ? (
+        <div className="space-y-4" role="status" aria-live="polite">
+          <div className="rounded-lg border border-primary/30 bg-primary/10 p-5 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-primary/20">
+              <Mail className="h-6 w-6 text-primary" />
+            </div>
+            <p className="mt-4 font-semibold text-foreground">Check your email</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              We sent a secure sign-in link to <span className="font-medium text-foreground">{maskedEmail}</span>.
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Open the link in the email to continue. The link expires in 10 minutes.
+            </p>
+          </div>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Didn't receive it?{" "}
+            {resendIn > 0 ? (
+              <span>Resend in {resendIn}s</span>
+            ) : (
+              <button
+                type="button"
+                onClick={onResend}
+                disabled={loading}
+                className="font-medium text-primary hover:underline"
+              >
+                Resend sign-in link
+              </button>
+            )}
+          </p>
+
+          {info && (
+            <p className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary text-center">
+              {info}
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive text-center flex items-center justify-center gap-2">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              {error}
+            </p>
+          )}
+
+          <div className="flex items-center justify-center gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStep("email");
+                setCode("");
+                setError(null);
+                setInfo(null);
+              }}
+              disabled={loading}
+            >
+              <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+              Use a different email
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setStep("verify")}
+              disabled={loading}
+            >
+              <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+              Enter 6-digit code instead
+            </Button>
+          </div>
+        </div>
       ) : (
-        <form onSubmit={onSubmitCode} className="space-y-4">
+        <form onSubmit={onSubmitCode} className="space-y-4" noValidate>
           <button
             type="button"
             onClick={() => {
-              setStep("email");
+              setStep("check-email");
               setCode("");
               setError(null);
               setInfo(null);
             }}
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> Use a different email
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to email
           </button>
           <div className="space-y-2">
-            <Label htmlFor="otp-code">Enter the 6-digit code</Label>
+            <Label htmlFor="otp-code">Enter the 6-digit code from the email</Label>
             <Input
               id="otp-code"
               ref={codeRef}
@@ -290,14 +372,16 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
               disabled={loading}
               className="text-center text-2xl font-semibold tracking-[0.5em]"
               required
+              aria-describedby="code-hint"
             />
-            <p className="text-xs text-muted-foreground">
-              Sent to <span className="font-medium text-foreground">{email}</span>. You can also
+            <p id="code-hint" className="text-xs text-muted-foreground">
+              Sent to <span className="font-medium text-foreground">{maskedEmail}</span>. You can also
               click the sign-in link in the email.
             </p>
           </div>
           {error && (
-            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
               {error}
             </p>
           )}
@@ -321,7 +405,7 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
                 disabled={loading}
                 className="font-medium text-primary hover:underline"
               >
-                Resend code
+                Resend sign-in link
               </button>
             )}
           </p>
