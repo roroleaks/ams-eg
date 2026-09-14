@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { touchProfile } from "@/lib/profile.functions";
+import { safeNext } from "@/lib/auth-utils";
 import { CALLBACK_TIMEOUT_MS, PROFILE_UPSERT_TIMEOUT_MS, raceWithTimeout } from "@/lib/sign-out";
 
 export const Route = createFileRoute("/auth/callback")({
@@ -15,14 +16,6 @@ export const Route = createFileRoute("/auth/callback")({
     typeof s.next === "string" && s.next ? { next: s.next } : {},
   component: AuthCallback,
 });
-
-// Only allow same-origin relative paths and never bounce back to auth screens.
-function safeNext(next: string): string {
-  if (!next.startsWith("/") || next.startsWith("//")) return "/";
-  if (/^[/\\]{2}/.test(next)) return "/";
-  if (next === "/auth" || next.startsWith("/auth/") || next.startsWith("/auth?")) return "/";
-  return next;
-}
 
 function AuthCallback() {
   const { next } = Route.useSearch();

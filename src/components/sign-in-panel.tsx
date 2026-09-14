@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Loader2, Mail } from "lucide-react";
+import { safeNext } from "@/lib/auth-utils";
 import {
   AUTH_RESTORE_TIMEOUT_MS,
   CALLBACK_TIMEOUT_MS,
@@ -15,14 +16,6 @@ import {
 
 const RESEND_COOLDOWN_S = 60;
 
-// Same-origin relative paths only; anything else (external, scheme-URLs,
-// protocol-relative, auth screens) falls back to "/" to prevent open-redirect.
-function safeNext(next: string | null | undefined): string {
-  if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//")) return "/";
-  if (/^[/\\]{2}/.test(next)) return "/";
-  if (next === "/auth" || next.startsWith("/auth/") || next.startsWith("/auth?")) return "/";
-  return next;
-}
 const LAST_EMAIL_KEY = "ams_last_login_email";
 const KNOWN_EMAILS_KEY = "ams_known_emails";
 const MAX_KNOWN_EMAILS = 6;
