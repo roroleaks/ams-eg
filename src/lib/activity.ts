@@ -10,7 +10,18 @@
  *    within the same session do not inflate the metrics.
  */
 import { recordActivity } from "@/lib/activity.functions";
-import { supabase } from "@/integrations/supabase/client";
+/** True when this device still holds a Supabase session token. */
+function hasStoredSession(): boolean {
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && /^sb-.*-auth-token/.test(key)) return true;
+    }
+  } catch {
+    /* storage unavailable — fall through */
+  }
+  return false;
+}
 import { normalizeComplaint } from "@/lib/activity-privacy";
 import type { EventInputType } from "@/lib/activity.schemas";
 
