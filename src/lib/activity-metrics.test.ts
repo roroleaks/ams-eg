@@ -13,6 +13,12 @@ vi.mock("@/lib/activity.functions", () => ({
 // minimal browser shims for the tracker
 class MemStore {
   m = new Map<string, string>();
+  get length() {
+    return this.m.size;
+  }
+  key(i: number) {
+    return [...this.m.keys()][i] ?? null;
+  }
   getItem(k: string) {
     return this.m.get(k) ?? null;
   }
@@ -25,6 +31,10 @@ class MemStore {
 }
 (globalThis as any).window = globalThis;
 (globalThis as any).sessionStorage = new MemStore();
+const localStore = new MemStore();
+// a signed-in device: the tracker only reports when a session token exists
+localStore.setItem("sb-test-auth-token", "token");
+(globalThis as any).localStorage = localStore;
 if (!(globalThis as any).crypto) (globalThis as any).crypto = {};
 
 const { track, startNewSession, getSessionId } = await import("./activity");
