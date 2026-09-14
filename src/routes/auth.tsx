@@ -23,6 +23,7 @@ function AuthPage() {
   const checking = status === "loading";
   const [expired, setExpired] = useState(false);
   const [localCleared, setLocalCleared] = useState(false);
+  const [hasStoredSession, setHasStoredSession] = useState(false);
 
   // Returning users keep their session: if they are still signed in and were
   // sent here on the way to a page, take them straight there.
@@ -39,12 +40,11 @@ function AuthPage() {
     setLocalCleared(consumeLocalCleared());
   }, [status]);
 
-  // A leftover stored token that no longer validates means the session
-  // expired. Detect it once the provider has finished restoring.
+  // A stored session token on this device means the visitor has signed in
+  // before. Offer a quick "already signed in" continue; if that token no
+  // longer validates, treat the session as expired.
   useEffect(() => {
     if (status !== "unauthenticated") return;
-    // Only a leftover stored token counts as an expiry; a fresh visitor
-    // must not be told their session expired.
     let hadToken = false;
     try {
       for (let i = 0; i < localStorage.length; i += 1) {
@@ -58,6 +58,7 @@ function AuthPage() {
       /* ignore */
     }
     if (!hadToken) return;
+    setHasStoredSession(true);
     let mounted = true;
     const t = window.setTimeout(() => {
       if (mounted) setExpired(true);
@@ -155,6 +156,13 @@ function AuthPage() {
             </p>
           </div>
         </div>
+
+        {hasStoredSession && (
+          <Button className="w-full mb-4" onClick={() => window.location.replace(dest)}>
+            Already signed in? Continue to AMS Clinical Reference
+          </Button>
+        )}
+
 
         {localCleared && (
           <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
