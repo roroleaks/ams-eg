@@ -172,6 +172,21 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
               We&apos;ll email you a single-use, secure access link. No password required.
             </p>
           </div>
+          <label className="flex items-start gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={staySignedIn}
+              onChange={(e) => setStaySignedIn(e.target.checked)}
+              disabled={loading}
+              className="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span>
+              Stay signed in on this device
+              <span className="block text-xs">
+                Untick on shared or public computers — you&apos;ll be signed out when you close this tab.
+              </span>
+            </span>
+          </label>
           {error && (
             <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-start gap-2">
               <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
