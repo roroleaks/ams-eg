@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { SignInPanel } from "@/components/sign-in-panel";
+import { OtpSignIn } from "@/components/otp-sign-in";
 import { useAuth } from "@/lib/auth-context";
 import { consumeLocalCleared } from "@/lib/sign-out";
 import { Loader2 } from "lucide-react";
@@ -38,7 +38,6 @@ function AuthPage() {
   const checking = status === "loading";
   const [expired, setExpired] = useState(false);
   const [localCleared, setLocalCleared] = useState(false);
-  const [tab, setTab] = useState<"signin" | "create">("signin");
 
   // A valid persisted session means this device is already trusted: send the
   // user straight back into the app without any sign-in prompt or extra click.
@@ -82,6 +81,16 @@ function AuthPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
       <Card className="w-full max-w-md p-8">
+        <div className="flex items-center gap-3 mb-6">
+          <img src="/ams-logo.png" alt="AMS" className="h-10 w-10" />
+          <div>
+            <h1 className="text-lg font-semibold text-foreground">AMS Clinical Reference</h1>
+            <p className="text-sm text-muted-foreground">
+              Sign in to access the clinical decision-support application
+            </p>
+          </div>
+        </div>
+
         {localCleared && (
           <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
             Your local session was cleared. Please reload if the app still appears signed in.
@@ -106,41 +115,13 @@ function AuthPage() {
             Your session expired. Please sign in again.
           </p>
         )}
-        <h1 className="mb-4 text-center text-lg font-semibold text-foreground">
-          Sign in or create an AMS account
-        </h1>
-        <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-muted/40 p-1">
-          <button
-            type="button"
-            onClick={() => setTab("signin")}
-            className={`rounded-lg py-2 text-sm font-medium transition-colors ${
-              tab === "signin"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("create")}
-            className={`rounded-lg py-2 text-sm font-medium transition-colors ${
-              tab === "create"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Create account
-          </button>
-        </div>
-        <SignInPanel next={dest} mode={tab} onSwitchMode={setTab} />
-        <p className="mt-6 text-center">
-          <Link
-            to="/"
-            className="text-sm text-muted-foreground hover:text-foreground hover:underline"
-          >
-            ← Back to search
-          </Link>
+
+        <OtpSignIn next={dest} />
+
+        <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground">
+          Sign-in is restricted to authorised users. We record basic session activity (when you sign
+          in/out and which articles you open) to keep the service secure and to improve it. We never
+          sell or share your personal data.
         </p>
       </Card>
     </div>
