@@ -40,12 +40,11 @@ function AuthPage() {
     setLocalCleared(consumeLocalCleared());
   }, [status]);
 
-  // A leftover stored token that no longer validates means the session
-  // expired. Detect it once the provider has finished restoring.
+  // A stored session token on this device means the visitor has signed in
+  // before. Offer a quick "already signed in" continue; if that token no
+  // longer validates, treat the session as expired.
   useEffect(() => {
     if (status !== "unauthenticated") return;
-    // Only a leftover stored token counts as an expiry; a fresh visitor
-    // must not be told their session expired.
     let hadToken = false;
     try {
       for (let i = 0; i < localStorage.length; i += 1) {
@@ -59,6 +58,7 @@ function AuthPage() {
       /* ignore */
     }
     if (!hadToken) return;
+    setHasStoredSession(true);
     let mounted = true;
     const t = window.setTimeout(() => {
       if (mounted) setExpired(true);
