@@ -107,18 +107,13 @@ export function track(input: TrackInput): void {
       set.add(key);
       remember(set);
     }
-    // Only send when an authenticated session exists: the recording endpoint
-    // requires a bearer token, and a signed-out client would otherwise surface
-    // an "Unauthorized" runtime error from a purely analytical call.
-    void supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (!data.session) return;
-        return recordActivity({
-          data: { ...rest, complaint_id, session_id: sessionId },
-        }).then(() => undefined);
-      })
-      .catch(() => {});
+    // Only send when a stored session exists: the recording endpoint requires
+    // a bearer token, so a signed-out client would otherwise surface an
+    // "Unauthorized" runtime error from a purely analytical call.
+    if (!hasStoredSession()) return;
+    void recordActivity({
+      data: { ...rest, complaint_id, session_id: sessionId },
+    }).catch(() => {});
   } catch {
     /* analytics failure must never surface to the user */
   }
