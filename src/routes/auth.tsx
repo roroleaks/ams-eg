@@ -156,6 +156,13 @@ function AuthPage() {
           </div>
         </div>
 
+        {hasStoredSession && (
+          <Button className="w-full mb-4" onClick={() => window.location.replace(dest)}>
+            Already signed in? Continue to AMS Clinical Reference
+          </Button>
+        )}
+
+
         {localCleared && (
           <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
             Your local session was cleared. Please reload if the app still appears signed in.
