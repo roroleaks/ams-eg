@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { OtpSignIn } from "@/components/otp-sign-in";
 import { useAuth } from "@/lib/auth-context";
+import { safeNext, maskEmail } from "@/lib/auth-utils";
 import { consumeLocalCleared } from "@/lib/sign-out";
 import { Loader2, LogOut, User } from "lucide-react";
 
@@ -14,22 +15,6 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-// Only allow same-origin relative paths; never bounce back to auth screens.
-function safeNext(next: string): string {
-  if (!next.startsWith("/") || next.startsWith("//")) return "/";
-  if (/^[/\\]{2}/.test(next)) return "/";
-  if (next === "/auth" || next.startsWith("/auth/") || next.startsWith("/auth?")) return "/";
-  return next;
-}
-
-function maskEmail(email: string | null): string {
-  if (!email) return "";
-  const [local, domain] = email.split("@");
-  if (!local || !domain) return email;
-  if (local.length <= 2) return `${local[0]}***@${domain}`;
-  return `${local[0]}${local.slice(1, -1).replace(/./g, "*")}${local[local.length - 1]}@${domain}`;
-}
-
 function AuthPage() {
   const { next } = Route.useSearch();
   const dest = safeNext(next || "/");
@@ -37,15 +22,6 @@ function AuthPage() {
   const checking = status === "loading";
   const [expired, setExpired] = useState(false);
   const [localCleared, setLocalCleared] = useState(false);
-
-  // A valid persisted session means this device is already trusted: send the
-  // user straight back into the app without any sign-in prompt or extra click.
-  // Covers both direct visits and the magic-link / Google OAuth return (the
-  // provider applies the delivered session before this effect runs).
-  useEffect(() => {
-    if (status !== "authenticated" || !user || signingOut) return;
-    window.location.href = dest;
-  }, [status, user, signingOut, dest]);
 
   // A one-shot notice when a sign-out could only clear the device locally (the
   // provider was unreachable). It never claims the server session was ended.
