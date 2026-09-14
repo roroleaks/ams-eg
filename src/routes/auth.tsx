@@ -35,6 +35,21 @@ function AuthPage() {
   // expired. Detect it once the provider has finished restoring.
   useEffect(() => {
     if (status !== "unauthenticated") return;
+    // Only a leftover stored token counts as an expiry; a fresh visitor
+    // must not be told their session expired.
+    let hadToken = false;
+    try {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key && /^sb-.*-auth-token/.test(key)) {
+          hadToken = true;
+          break;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    if (!hadToken) return;
     let mounted = true;
     const t = window.setTimeout(() => {
       if (mounted) setExpired(true);
