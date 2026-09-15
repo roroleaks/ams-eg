@@ -106,7 +106,11 @@ function AuthCallback() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
         <Card className="w-full max-w-md p-8 text-center">
-          <img src="/ams-logo.png" alt="AMS" className="mx-auto h-12 w-12" />
+          <img
+            src="/ams-logo.png"
+            alt="America Medic &amp; Science"
+            className="mx-auto h-16 w-16 rounded-2xl object-contain bg-white p-1.5 ring-1 ring-border shadow-sm"
+          />
           <h1 className="mt-4 text-lg font-semibold text-foreground">
             This sign-in link could not be completed
           </h1>
