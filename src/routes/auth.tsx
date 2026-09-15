@@ -151,14 +151,18 @@ function AuthPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
       <Card className="w-full max-w-md p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <img src="/ams-logo.png" alt="AMS" className="h-10 w-10" />
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">AMS Clinical Reference</h1>
-            <p className="text-sm text-muted-foreground">
-              Sign in to access the clinical decision-support application
-            </p>
-          </div>
+        <div className="mb-6 text-center">
+          <img
+            src="/ams-logo.png"
+            alt="America Medic &amp; Science"
+            className="mx-auto h-16 w-16 rounded-2xl object-contain bg-white p-1.5 ring-1 ring-border shadow-sm"
+          />
+          <h1 className="mt-4 text-xl font-semibold tracking-tight text-foreground">
+            AMS Clinical Reference
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Sign in to access the clinical decision-support application
+          </p>
         </div>
 
         {hasStoredSession && (
