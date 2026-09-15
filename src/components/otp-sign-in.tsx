@@ -175,10 +175,10 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
       }
       if (res.error) {
         const msg = res.error.message || "";
-        if (/expired/i.test(msg)) {
-          setError("That code has expired. Request a new access link to continue.");
-        } else if (/invalid|token/i.test(msg)) {
-          setError("That code is not valid. Check the email and try again.");
+        if (/expired|invalid|token/i.test(msg)) {
+          setError(
+            "That code is not valid or has expired. Check the latest email, or request a new access link.",
+          );
         } else {
           setError(friendlyAuthError(res.error));
         }
