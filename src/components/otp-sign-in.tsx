@@ -273,10 +273,35 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
               <span className="font-medium text-foreground">{maskedEmail}</span>.
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Open the email on this device and tap the link to enter your AMS clinical reference workspace.
-              The link expires in 10 minutes.
+              Open the email on this device and tap the link to enter your AMS clinical reference
+              workspace — or enter the 6-digit code from the same email below. Both expire in 10
+              minutes and can be used once.
             </p>
           </div>
+
+          <form onSubmit={onVerifyCode} className="space-y-3">
+            <Label htmlFor="otp-code">Enter your 6-digit access code</Label>
+            <Input
+              id="otp-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="123456"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              disabled={verifying}
+              className="text-center text-2xl tracking-[0.5em] font-semibold"
+              aria-describedby="otp-code-hint"
+            />
+            <p id="otp-code-hint" className="text-xs text-muted-foreground text-center">
+              Use the code if you opened the email on another device.
+            </p>
+            <Button type="submit" className="w-full" disabled={verifying || code.length !== 6}>
+              {verifying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Verify and continue
+            </Button>
+          </form>
+
 
           <p className="text-center text-sm text-muted-foreground">
             Didn&apos;t receive it?{" "}
