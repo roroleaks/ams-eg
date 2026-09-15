@@ -151,6 +151,47 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
     }
   }
 
+  /** Verifies the 6-digit access code included in the sign-in email. */
+  async function onVerifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (verifying) return;
+    setError(null);
+    setInfo(null);
+    const token = code.replace(/\D/g, "");
+    if (token.length !== 6) {
+      setError("Enter the 6-digit code from your email.");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const res = await raceWithTimeout(
+        supabase.auth.verifyOtp({ email: email.trim().toLowerCase(), token, type: "email" }),
+        CALLBACK_TIMEOUT_MS,
+        "TIMEOUT" as const,
+      );
+      if (res === "TIMEOUT") {
+        setError("Verification timed out. Check your connection and try again.");
+        return;
+      }
+      if (res.error) {
+        const msg = res.error.message || "";
+        if (/expired/i.test(msg)) {
+          setError("That code has expired. Request a new access link to continue.");
+        } else if (/invalid|token/i.test(msg)) {
+          setError("That code is not valid. Check the email and try again.");
+        } else {
+          setError(friendlyAuthError(res.error));
+        }
+        return;
+      }
+      window.location.href = safeNext(next || "/");
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
   async function onGoogle() {
     setError(null);
     setLoading(true);
