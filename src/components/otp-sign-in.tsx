@@ -38,6 +38,8 @@ function readStaySignedIn(): boolean {
 export function OtpSignIn({ next = "/" }: { next?: string }) {
   const [step, setStep] = useState<"email" | "check-email">("email");
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -149,6 +151,47 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
     }
   }
 
+  /** Verifies the 6-digit access code included in the sign-in email. */
+  async function onVerifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (verifying) return;
+    setError(null);
+    setInfo(null);
+    const token = code.replace(/\D/g, "");
+    if (token.length !== 6) {
+      setError("Enter the 6-digit code from your email.");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const res = await raceWithTimeout(
+        supabase.auth.verifyOtp({ email: email.trim().toLowerCase(), token, type: "email" }),
+        CALLBACK_TIMEOUT_MS,
+        "TIMEOUT" as const,
+      );
+      if (res === "TIMEOUT") {
+        setError("Verification timed out. Check your connection and try again.");
+        return;
+      }
+      if (res.error) {
+        const msg = res.error.message || "";
+        if (/expired|invalid|token/i.test(msg)) {
+          setError(
+            "That code is not valid or has expired. Check the latest email, or request a new access link.",
+          );
+        } else {
+          setError(friendlyAuthError(res.error));
+        }
+        return;
+      }
+      window.location.href = safeNext(next || "/");
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
   async function onGoogle() {
     setError(null);
     setLoading(true);
@@ -230,10 +273,35 @@ export function OtpSignIn({ next = "/" }: { next?: string }) {
               <span className="font-medium text-foreground">{maskedEmail}</span>.
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Open the email on this device and tap the link to enter your AMS clinical reference workspace.
-              The link expires in 10 minutes.
+              Open the email on this device and tap the link to enter your AMS clinical reference
+              workspace — or enter the 6-digit code from the same email below. Both expire in 10
+              minutes and can be used once.
             </p>
           </div>
+
+          <form onSubmit={onVerifyCode} className="space-y-3">
+            <Label htmlFor="otp-code">Enter your 6-digit access code</Label>
+            <Input
+              id="otp-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="123456"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              disabled={verifying}
+              className="text-center text-2xl tracking-[0.5em] font-semibold"
+              aria-describedby="otp-code-hint"
+            />
+            <p id="otp-code-hint" className="text-xs text-muted-foreground text-center">
+              Use the code if you opened the email on another device.
+            </p>
+            <Button type="submit" className="w-full" disabled={verifying || code.length !== 6}>
+              {verifying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Verify and continue
+            </Button>
+          </form>
+
 
           <p className="text-center text-sm text-muted-foreground">
             Didn&apos;t receive it?{" "}
