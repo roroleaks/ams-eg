@@ -38,6 +38,8 @@ function readStaySignedIn(): boolean {
 export function OtpSignIn({ next = "/" }: { next?: string }) {
   const [step, setStep] = useState<"email" | "check-email">("email");
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
