@@ -563,6 +563,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_list_users: {
+        Args: never
+        Returns: {
+          created_at: string
+          email: string
+          email_confirmed_at: string
+          id: string
+          last_sign_in_at: string
+        }[]
+      }
+      can_view_admin: { Args: { _user_id: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -573,7 +584,13 @@ export type Database = {
       purge_old_sessions: { Args: never; Returns: number }
     }
     Enums: {
-      app_role: "admin" | "user" | "owner" | "medical_editor" | "registered"
+      app_role:
+        | "admin"
+        | "user"
+        | "owner"
+        | "medical_editor"
+        | "registered"
+        | "co_admin"
       doc_status: "pending" | "processing" | "indexed" | "failed"
     }
     CompositeTypes: {
@@ -702,7 +719,14 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "user", "owner", "medical_editor", "registered"],
+      app_role: [
+        "admin",
+        "user",
+        "owner",
+        "medical_editor",
+        "registered",
+        "co_admin",
+      ],
       doc_status: ["pending", "processing", "indexed", "failed"],
     },
   },
