@@ -79,12 +79,14 @@ function AdminPage() {
   const isAdminServer = useServerFn(isAdminFn);
   const [ready, setReady] = useState(false);
   const [allowed, setAllowed] = useState(false);
+  const [readOnly, setReadOnly] = useState(false);
   useSessionTracker(!signingOut);
 
   useEffect(() => {
     isAdminServer()
       .then((r) => {
-        setAllowed(r.isAdmin);
+        setAllowed(r.isAdmin || r.isCoAdmin);
+        setReadOnly(!r.isAdmin && r.isCoAdmin);
         setReady(true);
       })
       .catch(() => {
@@ -149,6 +151,11 @@ function AdminPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
+        {readOnly && (
+          <div className="mb-4 rounded-lg border bg-muted/50 px-4 py-2 text-sm text-muted-foreground">
+            Co-admin view — you can see everything, but changes are disabled.
+          </div>
+        )}
         <Tabs defaultValue="overview">
           <TabsList className="mb-6">
             <TabsTrigger value="overview">
@@ -178,28 +185,28 @@ function AdminPage() {
           </TabsList>
 
           <TabsContent value="overview">
-            <OverviewTab />
+            <fieldset disabled={readOnly} className="min-w-0"><OverviewTab /></fieldset>
           </TabsContent>
           <TabsContent value="documents">
-            <DocumentsTab />
+            <fieldset disabled={readOnly} className="min-w-0"><DocumentsTab /></fieldset>
           </TabsContent>
           <TabsContent value="users">
-            <UsersTab />
+            <fieldset disabled={readOnly} className="min-w-0"><UsersTab /></fieldset>
           </TabsContent>
           <TabsContent value="registered">
-            <RegisteredUsersTab />
+            <fieldset disabled={readOnly} className="min-w-0"><RegisteredUsersTab /></fieldset>
           </TabsContent>
           <TabsContent value="logs">
-            <LogsTab />
+            <fieldset disabled={readOnly} className="min-w-0"><LogsTab /></fieldset>
           </TabsContent>
           <TabsContent value="analytics">
-            <AnalyticsTab />
+            <fieldset disabled={readOnly} className="min-w-0"><AnalyticsTab /></fieldset>
           </TabsContent>
           <TabsContent value="activity">
-            <ActivityAnalyticsTab />
+            <fieldset disabled={readOnly} className="min-w-0"><ActivityAnalyticsTab /></fieldset>
           </TabsContent>
           <TabsContent value="audit">
-            <AuditLogTab />
+            <fieldset disabled={readOnly} className="min-w-0"><AuditLogTab /></fieldset>
           </TabsContent>
         </Tabs>
       </main>
@@ -534,6 +541,12 @@ function UsersTab() {
     qc.invalidateQueries({ queryKey: ["admin-users"] });
   }
 
+  async function toggleCoAdmin(u: any) {
+    const has = u.roles.includes("co_admin");
+    await roleFn({ data: { user_id: u.id, role: "co_admin", grant: !has } });
+    qc.invalidateQueries({ queryKey: ["admin-users"] });
+  }
+
   async function onDelete(u: any) {
     if (!confirm(`Delete user ${u.email}? This cannot be undone.`)) return;
     await delFn({ data: { user_id: u.id } });
@@ -591,6 +604,13 @@ function UsersTab() {
                     <span className="text-xs">
                       {u.roles.includes("admin") ? "admin" : "user"}
                     </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Switch
+                      checked={u.roles.includes("co_admin")}
+                      onCheckedChange={() => toggleCoAdmin(u)}
+                    />
+                    <span className="text-xs">co-admin (view only)</span>
                   </div>
                 </TableCell>
                 <TableCell className="text-xs">
