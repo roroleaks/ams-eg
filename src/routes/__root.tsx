@@ -109,7 +109,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="pb-8">
         {children}
         <Scripts />
       </body>
@@ -125,8 +125,8 @@ function RootComponent() {
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <AuthProvider>
         <Outlet />
-         <footer className="border-t border-border/50 py-4 text-center print:hidden">
-           <p className="text-[10px] text-muted-foreground/70">Copyrights@RaoufRoshdy2026</p>
+         <footer className="fixed inset-x-0 bottom-0 z-50 border-t border-border/50 bg-background py-2 text-center print:hidden">
+           <p className="text-[10px] text-muted-foreground">Copyrights@RaoufRoshdy2026</p>
          </footer>
       </AuthProvider>
     </QueryClientProvider>
