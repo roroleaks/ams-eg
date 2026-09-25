@@ -33,6 +33,13 @@ async function requireAdmin(context: { supabase: any; userId: string }) {
   if (!data) throw new Error("Forbidden: admin only");
 }
 
+
+async function requireViewer(context: { supabase: any; userId: string }) {
+  const { data, error } = await context.supabase.rpc("can_view_admin", { _user_id: context.userId });
+  if (error) throw new Error(error.message);
+  if (data !== true) throw new Error("Forbidden: admin only");
+}
+
 /* ---------------- Recording (never blocks or breaks the clinical flow) ---------------- */
 
 export const recordActivity = createServerFn({ method: "POST" })
@@ -107,7 +114,7 @@ export const activityDashboard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ days: z.number().int().min(1).max(365).default(30) }).parse(d ?? {}))
   .handler(async ({ data, context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const { data: rowsRaw, error } = await context.supabase
       .from("activity_events")
       .select(SELECT)
@@ -184,7 +191,7 @@ export const listAuditLog = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => AuditFilter.parse(d ?? {}))
   .handler(async ({ data, context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     let q = context.supabase
       .from("activity_events")
       .select(SELECT)
@@ -208,7 +215,7 @@ export const userActivityProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const { data: profile } = await context.supabase
       .from("profiles")
       .select("id, full_name, email, avatar_url, created_at, last_login_at, search_count, report_count")
@@ -247,7 +254,7 @@ export const userActivityProfile = createServerFn({ method: "POST" })
 export const getRetention = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const { data } = await context.supabase
       .from("app_settings")
       .select("value, updated_at")

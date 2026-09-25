@@ -16,6 +16,13 @@ async function requireAdmin(context: { supabase: any; userId: string }) {
   if (!data) throw new Error("Forbidden: admin only");
 }
 
+
+async function requireViewer(context: { supabase: any; userId: string }) {
+  const { data, error } = await context.supabase.rpc("can_view_admin", { _user_id: context.userId });
+  if (error) throw new Error(error.message);
+  if (data !== true) throw new Error("Forbidden: admin only");
+}
+
 async function adminRpc(supabase: any, fn: string, args?: Record<string, unknown>) {
   return supabase.rpc(fn, args);
 }
@@ -83,7 +90,7 @@ async function audit(
 export const listDocuments = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const { data, error } = await context.supabase
       .from("documents")
       .select("*")
@@ -365,7 +372,7 @@ export const reindexDocument = createServerFn({ method: "POST" })
 export const listUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const { data: authUsers, error: usersErr } = await adminRpc(context.supabase, "admin_list_users");
     if (usersErr) throw new Error(usersErr.message);
     const users = (authUsers ?? []) as Array<{
@@ -404,7 +411,7 @@ export const setUserRole = createServerFn({ method: "POST" })
     z
       .object({
         user_id: z.string().uuid(),
-        role: z.enum(["admin", "user"]),
+        role: z.enum(["admin", "co_admin", "user"]),
         grant: z.boolean(),
       })
       .parse(d),
@@ -512,7 +519,7 @@ export const deleteUser = createServerFn({ method: "POST" })
 export const listIndexingLogs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const { data, error } = await context.supabase
       .from("indexing_logs")
       .select("*")
@@ -525,7 +532,7 @@ export const listIndexingLogs = createServerFn({ method: "GET" })
 export const listSearchAnalytics = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const { data, error } = await context.supabase
       .from("search_analytics")
       .select("*")
@@ -550,7 +557,7 @@ export const listSearchAnalytics = createServerFn({ method: "GET" })
 export const exportUsageReport = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const { data: analytics } = await context.supabase
       .from("search_analytics")
       .select("*")
@@ -577,9 +584,9 @@ export const isAdmin = createServerFn({ method: "GET" })
       .from("user_roles")
       .select("role")
       .eq("user_id", context.userId)
-      .eq("role", "admin")
-      .maybeSingle();
-    return { isAdmin: !!data };
+      .in("role", ["admin", "co_admin"]);
+    const roles = (data ?? []).map((r: any) => r.role);
+    return { isAdmin: roles.includes("admin"), isCoAdmin: roles.includes("co_admin") };
   });
 
 // ============ Registered users & user analytics ============
@@ -587,7 +594,7 @@ export const isAdmin = createServerFn({ method: "GET" })
 export const listRegisteredUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const [{ data: profiles }, { data: authUsers }, { data: favs }, { data: roles }] =
       await Promise.all([
         context.supabase.from("profiles").select("*").order("created_at", { ascending: false }),
@@ -633,7 +640,7 @@ export const listRegisteredUsers = createServerFn({ method: "GET" })
 export const userAnalytics = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const now = Date.now();
     const dayAgo = new Date(now - 86400_000).toISOString();
     const weekAgo = new Date(now - 7 * 86400_000).toISOString();
@@ -717,7 +724,7 @@ export const userAnalytics = createServerFn({ method: "GET" })
 export const exportRegisteredUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const { data: profiles } = await context.supabase
       .from("profiles")
       .select("full_name, email, created_at, last_login_at, search_count, report_count")

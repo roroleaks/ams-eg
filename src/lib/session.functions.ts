@@ -111,6 +111,13 @@ async function requireAdmin(context: { supabase: any; userId: string }) {
   if (!data) throw new Error("Forbidden: admin only");
 }
 
+
+async function requireViewer(context: { supabase: any; userId: string }) {
+  const { data, error } = await context.supabase.rpc("can_view_admin", { _user_id: context.userId });
+  if (error) throw new Error(error.message);
+  if (data !== true) throw new Error("Forbidden: admin only");
+}
+
 const INACTIVE_AFTER_MS = 30 * 60 * 1000;
 
 export const sessionOverview = createServerFn({ method: "GET" })
@@ -119,7 +126,7 @@ export const sessionOverview = createServerFn({ method: "GET" })
     z.object({ days: z.number().int().min(1).max(365).default(30) }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
-    await requireAdmin(context);
+    await requireViewer(context);
     const since = (days: number) =>
       new Date(Date.now() - days * 86400_000).toISOString();
 
