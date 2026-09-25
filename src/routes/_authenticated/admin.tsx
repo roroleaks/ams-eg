@@ -70,7 +70,14 @@ import { sessionOverview } from "@/lib/session.functions";
 import { useSessionTracker } from "@/lib/session";
 
 export const Route = createFileRoute("/_authenticated/admin")({
-  head: () => ({ meta: [{ title: "Admin — AMS" }] }),
+  head: () => ({ meta: [
+    { title: "Admin — AMS Product Advisor" },
+    { name: "description", content: "Manage AMS Product Advisor users, sessions, activity and clinical library." },
+    { property: "og:title", content: "Admin — AMS Product Advisor" },
+    { property: "og:description", content: "Manage AMS Product Advisor users, sessions, activity and clinical library." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
   component: AdminPage,
 });
 

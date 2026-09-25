@@ -78,18 +78,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
+      { title: "AMS Product Advisor" },
       { name: "description", content: "Search tool in AMS producrs" },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
+      { property: "og:title", content: "AMS Product Advisor" },
       { property: "og:description", content: "Search tool in AMS producrs" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "Lovable App" },
+      { name: "twitter:title", content: "AMS Product Advisor" },
       { name: "twitter:description", content: "Search tool in AMS producrs" },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/6a3df93a-eeb0-4df5-8385-08a820da72f1/id-preview-77ad9bf4--639cf37f-6068-4b21-9725-c1296a7d141c.lovable.app-1781543548698.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/6a3df93a-eeb0-4df5-8385-08a820da72f1/id-preview-77ad9bf4--639cf37f-6068-4b21-9725-c1296a7d141c.lovable.app-1781543548698.png" },
     ],
     links: [
       {
@@ -111,7 +109,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="pb-8">
         {children}
         <Scripts />
       </body>
@@ -127,6 +125,9 @@ function RootComponent() {
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <AuthProvider>
         <Outlet />
+         <footer className="fixed inset-x-0 bottom-0 z-50 border-t border-border/50 bg-background py-2 text-center print:hidden">
+           <p className="text-[10px] text-muted-foreground">Copyrights@RaoufRoshdy2026</p>
+         </footer>
       </AuthProvider>
     </QueryClientProvider>
   );

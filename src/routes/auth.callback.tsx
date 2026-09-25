@@ -12,6 +12,14 @@ import { CALLBACK_TIMEOUT_MS, PROFILE_UPSERT_TIMEOUT_MS, raceWithTimeout } from 
 
 export const Route = createFileRoute("/auth/callback")({
   ssr: false,
+  head: () => ({ meta: [
+    { title: "Completing sign-in — AMS Clinical Reference" },
+    { name: "description", content: "Complete your secure sign-in to AMS Clinical Reference." },
+    { property: "og:title", content: "Completing sign-in — AMS Clinical Reference" },
+    { property: "og:description", content: "Complete your secure sign-in to AMS Clinical Reference." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
   validateSearch: (s: Record<string, unknown>): { next?: string } =>
     typeof s.next === "string" && s.next ? { next: s.next } : {},
   component: AuthCallback,

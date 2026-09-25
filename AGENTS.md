@@ -1,0 +1,1 @@
+Keep the copyright line in the shared root layout rather than individual pages, so all app screens show the same text without duplication.

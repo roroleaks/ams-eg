@@ -10,7 +10,14 @@ import { Loader2, LogOut, User } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
-  head: () => ({ meta: [{ title: "Sign in — AMS" }] }),
+  head: () => ({ meta: [
+    { title: "Sign in — AMS Clinical Reference" },
+    { name: "description", content: "Sign in securely to access AMS clinical product guidance and evidence." },
+    { property: "og:title", content: "Sign in — AMS Clinical Reference" },
+    { property: "og:description", content: "Secure access to AMS clinical product guidance and evidence." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
   validateSearch: (s: Record<string, unknown>): { next?: string } =>
     typeof s.next === "string" && s.next ? { next: s.next } : {},
   component: AuthPage,

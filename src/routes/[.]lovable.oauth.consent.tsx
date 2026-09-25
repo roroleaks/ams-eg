@@ -25,6 +25,14 @@ const authOauth = (
 
 export const Route = createFileRoute("/.lovable/oauth/consent")({
   ssr: false,
+  head: () => ({ meta: [
+    { title: "Authorize access — AMS Product Advisor" },
+    { name: "description", content: "Review access authorization for AMS Product Advisor." },
+    { property: "og:title", content: "Authorize access — AMS Product Advisor" },
+    { property: "og:description", content: "Review access authorization for AMS Product Advisor." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
   validateSearch: (s: Record<string, unknown>) => ({
     authorization_id: typeof s.authorization_id === "string" ? s.authorization_id : "",
   }),
