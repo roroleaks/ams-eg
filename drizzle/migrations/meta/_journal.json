@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790353717924,
+      "tag": "0000_co_admin_viewer_role",
+      "breakpoints": true
+    }
+  ]
+}

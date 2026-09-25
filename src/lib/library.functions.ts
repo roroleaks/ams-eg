@@ -42,6 +42,13 @@ async function adminContext(context: { supabase: any; userId: string }) {
   return context.supabase;
 }
 
+
+async function requireViewer(context: { supabase: any; userId: string }) {
+  const { data, error } = await context.supabase.rpc("can_view_admin", { _user_id: context.userId });
+  if (error) throw new Error(error.message);
+  if (data !== true) throw new Error("Forbidden: admin only");
+}
+
 type Admin = Awaited<ReturnType<typeof adminContext>>;
 
 async function readLock(db: Admin) {
@@ -98,7 +105,7 @@ export const releaseLibraryLock = createServerFn({ method: "POST" })
 export const libraryStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const db = await adminContext(context);
+    await requireViewer(context); const db = context.supabase;
     const { data } = await db
       .from("complaint_library")
       .select("complaint, status, built_at, product_count, evidence_count, literature_count")
