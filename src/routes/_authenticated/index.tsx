@@ -526,6 +526,12 @@ function Index() {
             )}
             {session ? (
               <>
+                <Link to="/products">
+                  <Button variant="outline" size="sm" className="rounded-full">
+                    <Pill className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Products</span>
+                  </Button>
+                </Link>
                 <Link to="/activity">
                   <Button variant="outline" size="sm" className="rounded-full">
                     <LayoutDashboard className="h-4 w-4 sm:mr-1" />
