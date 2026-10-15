@@ -16,7 +16,6 @@ import {
   Printer,
   Star,
   LayoutDashboard,
-  Pill,
   Mic,
   Activity,
   FlaskConical,
