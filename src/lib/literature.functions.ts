@@ -24,6 +24,66 @@ export interface LiteratureItem {
   openAccess?: boolean;
   matchedIngredients?: string[];
   relevance?: number;
+  /** Set by the background validation engine. */
+  validated?: boolean;
+  validationNote?: string;
+}
+
+/**
+ * Background validation engine: an AI reviewer reads each candidate's title
+ * and abstract and confirms it is clinical evidence linking the complaint to
+ * at least one product ingredient. Off-topic papers are removed before the
+ * doctor sees results. If the AI step fails, rule-based results are kept.
+ */
+async function validateEvidence(
+  complaint: string,
+  ingredients: string[],
+  items: LiteratureItem[],
+): Promise<LiteratureItem[]> {
+  if (!items.length) return items;
+  const { getLovableApiKey } = await import("@/lib/lovable-api-key");
+  const key = getLovableApiKey();
+  if (!key) return items;
+  const list = items
+    .map((it, i) => `[${i}] ${it.title}\n${it.abstract.slice(0, 700)}`)
+    .join("\n\n");
+  try {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              'You are a strict clinical evidence reviewer. For each paper decide if it provides evidence (efficacy, mechanism in humans, safety, or guideline) about using at least one of the listed ingredients for the given complaint. Reject papers about unrelated conditions, unrelated interventions, purely incidental mentions, or non-clinical topics. Reply JSON: {"results":[{"i":number,"keep":boolean,"score":0-10,"note":"<=15 words why"}]}',
+          },
+          {
+            role: "user",
+            content: `Complaint: ${complaint}\nIngredients: ${ingredients.join(", ") || "(any AMS product component)"}\n\nPapers:\n${list}`,
+          },
+        ],
+      }),
+    });
+    if (!res.ok) return items;
+    const j = (await res.json()) as { choices: { message: { content: string } }[] };
+    const raw = j.choices[0]?.message?.content ?? "";
+    const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as {
+      results?: { i: number; keep: boolean; score?: number; note?: string }[];
+    };
+    const verdicts = new Map((parsed.results ?? []).map((r) => [r.i, r]));
+    if (!verdicts.size) return items;
+    return items
+      .map((it, i) => ({ it, v: verdicts.get(i) }))
+      .filter(({ v }) => v?.keep)
+      .sort((a, b) => (b.v?.score ?? 0) - (a.v?.score ?? 0) || a.it.evidenceRank - b.it.evidenceRank)
+      .map(({ it, v }) => ({ ...it, validated: true, validationNote: v?.note?.slice(0, 140) }));
+  } catch {
+    return items;
+  }
 }
 
 // Rank publication types by evidence strength for medical decision-making
@@ -184,9 +244,11 @@ export const searchLiterature = createServerFn({ method: "POST" })
             const sb = (b.relevance ?? 0) + (7 - b.evidenceRank) * 1.2;
             return sb - sa || Number(b.year || 0) - Number(a.year || 0);
           })
-          .slice(0, limit);
+          .slice(0, Math.min(24, limit * 2));
 
-        return { items: chosen, total: j.hitCount ?? chosen.length, error: null };
+        const validated = await validateEvidence(data.query, ingTerms, chosen);
+        const finalItems = validated.slice(0, limit);
+        return { items: finalItems, total: j.hitCount ?? finalItems.length, error: null };
       } catch {
         // Bounded failure: never let a slow/unreachable medical-literature
         // provider leave the UI spinning. Return an empty, graceful result.
