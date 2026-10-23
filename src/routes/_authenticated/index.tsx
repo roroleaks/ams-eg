@@ -341,7 +341,7 @@ function Index() {
       if (!litSettledRef.current) {
         setLitError("Medical literature search timed out. Showing product results only.");
       }
-    }, 60000);
+    }, 20000);
     return () => {
       cancelled = true;
       clearTimeout(handle);

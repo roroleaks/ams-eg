@@ -227,8 +227,8 @@ export const searchLiterature = createServerFn({ method: "POST" })
           `NOT SRC:PPR`,
         ].filter(Boolean).join(" AND ");
 
-        let j = await epmc(build(fromYear), 50);
-        if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 50);
+        let j = await epmc(build(fromYear), 100);
+        if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
         const raw = j.resultList?.result ?? [];
 
         const items: LiteratureItem[] = raw.map((r) => {
@@ -276,24 +276,30 @@ export const searchLiterature = createServerFn({ method: "POST" })
           };
         });
 
-        // Drop papers that don't actually discuss an ingredient (when known)
-        // or that lack an abstract to verify relevance.
-        const relevant = items.filter((i) =>
-          i.abstract.length > 50 && !/^(retraction|retracted|erratum|correction)\b/i.test(i.title) && (ingTerms.length === 0 || (i.matchedIngredients?.length ?? 0) > 0),
-        );
-        const highTier = relevant.filter((i) => i.evidenceRank <= 4);
-        const pool = highTier.length >= 4 ? highTier : relevant;
-        const chosen = pool
-          .sort((a, b) => {
-            const sa = (a.relevance ?? 0) + (7 - a.evidenceRank) * 1.2;
-            const sb = (b.relevance ?? 0) + (7 - b.evidenceRank) * 1.2;
-            return sb - sa || Number(b.year || 0) - Number(a.year || 0);
-          })
-          .slice(0, Math.min(24, limit * 2));
-
-        const validated = await validateEvidence(data.query, ingTerms, chosen);
-        const finalItems = validated.slice(0, limit);
-        return { items: finalItems, total: j.hitCount ?? finalItems.length, error: null };
+        // Strict evidence gate: Tier 1 (guideline / systematic review /
+        // meta-analysis) and Tier 2 (RCT / placebo-controlled) human studies
+        // only. Design is read from pubType AND title/abstract text.
+        const NOTICE = /^(retraction|retracted|erratum|correction|corrigendum|expression of concern|author'?s? reply|reply|comment|letter|study protocol)\b/i;
+        const PRECLIN = /\b(mice|mouse|murine|rats?|rodents?|zebrafish|in vitro|cell lines?|cell culture|granulosa cells|animal model)\b/i;
+        const tierOf = (i: LiteratureItem): number => {
+          const t = `${i.pubType} ${i.title}`.toLowerCase();
+          const a = i.abstract.toLowerCase();
+          if (/protocol/.test(i.title.toLowerCase())) return 9;
+          if (/guideline|consensus statement|meta-analys|meta analys|systematic review/.test(t) || /\b(systematic review|meta-analysis)\b/.test(a.slice(0, 400))) return 1;
+          if (/randomi[sz]ed|placebo-controlled|double-blind/.test(t) || /\b(randomi[sz]ed|placebo-controlled|double-blind)\b/.test(a)) return 2;
+          return 9;
+        };
+        const finalItems = items
+          .filter((i) =>
+            i.abstract.length > 50 && !NOTICE.test(i.title) &&
+            !PRECLIN.test(i.title) && !(PRECLIN.test(i.abstract) && !/\b(patients|women|men|participants|subjects|humans?)\b/i.test(i.abstract)) &&
+            (ingTerms.length === 0 || (i.matchedIngredients?.length ?? 0) > 0),
+          )
+          .map((i) => ({ ...i, evidenceRank: tierOf(i) }))
+          .filter((i) => i.evidenceRank <= 2)
+          .sort((a, b) => a.evidenceRank - b.evidenceRank || (b.relevance ?? 0) - (a.relevance ?? 0) || Number(b.year || 0) - Number(a.year || 0))
+          .slice(0, limit);
+        return { items: finalItems, total: finalItems.length, error: null };
       } catch {
         // Bounded failure: never let a slow/unreachable medical-literature
         // provider leave the UI spinning. Return an empty, graceful result.
