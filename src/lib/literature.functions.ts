@@ -48,30 +48,75 @@ async function validateEvidence(
     .map((it, i) => `[${i}] ${it.title}\n${it.abstract.slice(0, 700)}`)
     .join("\n\n");
   try {
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(20000),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+        "X-Lovable-AIG-SDK": "fetch",
+      },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              'You are a strict clinical evidence reviewer. For each paper decide if it provides evidence (efficacy, mechanism in humans, safety, or guideline) about using at least one of the listed ingredients for the given complaint. Reject papers about unrelated conditions, unrelated interventions, purely incidental mentions, or non-clinical topics. Reply JSON: {"results":[{"i":number,"keep":boolean,"score":0-10,"note":"<=15 words why"}]}',
+        model: "openai/gpt-6-astra",
+        stream: true,
+        store: false,
+        reasoning: { effort: "low" },
+        instructions:
+          "You are a strict clinical evidence reviewer. For each paper decide if it provides evidence (efficacy, human mechanism, safety, or guideline) about using at least one listed ingredient for the given complaint. Reject unrelated conditions, unrelated interventions, incidental mentions, or non-clinical topics. Return json.",
+        input: `Complaint: ${complaint}\nIngredients: ${ingredients.join(", ") || "(any AMS product component)"}\n\nPapers:\n${list}`,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "verdicts",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["results"],
+              properties: {
+                results: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["i", "keep", "score", "note"],
+                    properties: {
+                      i: { type: "integer" },
+                      keep: { type: "boolean" },
+                      score: { type: "number" },
+                      note: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
           },
-          {
-            role: "user",
-            content: `Complaint: ${complaint}\nIngredients: ${ingredients.join(", ") || "(any AMS product component)"}\n\nPapers:\n${list}`,
-          },
-        ],
+        },
       }),
     });
-    if (!res.ok) return items;
-    const j = (await res.json()) as { choices: { message: { content: string } }[] };
-    const raw = j.choices[0]?.message?.content ?? "";
-    const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as {
+    if (!res.ok || !res.body) return items;
+    // Consume the SSE stream and accumulate the JSON output text.
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let raw = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const ev = JSON.parse(payload) as { type?: string; delta?: string };
+          if (ev.type === "response.output_text.delta" && ev.delta) raw += ev.delta;
+        } catch { /* ignore partial */ }
+      }
+    }
+    const parsed = JSON.parse(raw) as {
       results?: { i: number; keep: boolean; score?: number; note?: string }[];
     };
     const verdicts = new Map((parsed.results ?? []).map((r) => [r.i, r]));
