@@ -34,6 +34,7 @@ import { loadEmbeddings } from "@/lib/search";
 import { matchProducts, loadComplaintEmbeddings, type ProductMatch } from "@/lib/complaint-match";
 import { embedQuery } from "@/lib/embed.functions";
 import { summarizeProductReport } from "@/lib/product-report.functions";
+import { PRODUCT_INGREDIENTS } from "@/data/product-ingredients";
 import { searchLiterature, type LiteratureItem } from "@/lib/literature.functions";
 import { logSearch } from "@/lib/analytics.functions";
 import {
@@ -287,6 +288,15 @@ function Index() {
     setReportError(null);
   }, [query]);
 
+  // Active ingredients of the matched products: literature must link the
+  // complaint to these components, not just mention the complaint.
+  const litIngredients = useMemo(() => {
+    const out = new Set<string>();
+    for (const m of matches.slice(0, 4))
+      for (const i of PRODUCT_INGREDIENTS[m.product] ?? []) out.add(i.name);
+    return [...out].slice(0, 20);
+  }, [matches]);
+
   // Fetch recent literature for the complaint (cached server-side). Runs in the
   // background and can never hold the page in a loading state: the server call
   // is timeout-bounded and a client watchdog clears the "Searching…" indicator
@@ -304,7 +314,7 @@ function Index() {
     setLitLoading(true);
     setLitError(null);
     const handle = setTimeout(() => {
-      literatureFn({ data: { query: q, yearsBack: 5, limit: 12 } })
+      literatureFn({ data: { query: q, yearsBack: 5, limit: 12, ingredients: litIngredients } })
         .then(({ items, error }) => {
           if (cancelled) return;
           litSettledRef.current = true;
@@ -337,7 +347,7 @@ function Index() {
       clearTimeout(handle);
       clearTimeout(watchdog);
     };
-  }, [query, useLiterature, matches.length, session, literatureFn]);
+  }, [query, useLiterature, matches.length, session, literatureFn, litIngredients]);
 
   // Analytics (registered users only) + persistent search history
   useEffect(() => {
@@ -414,7 +424,7 @@ function Index() {
       let lit = literature;
       if (useLiterature && lit.length === 0) {
         try {
-          const { items } = await literatureFn({ data: { query, yearsBack: 5, limit: 12 } });
+          const { items } = await literatureFn({ data: { query, yearsBack: 5, limit: 12, ingredients: litIngredients } });
           lit = items;
           setLiterature(items);
         } catch {
