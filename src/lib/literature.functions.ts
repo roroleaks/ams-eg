@@ -76,7 +76,6 @@ async function epmc(query: string, pageSize: number) {
   url.searchParams.set("format", "json");
   url.searchParams.set("resultType", "core");
   url.searchParams.set("pageSize", String(pageSize));
-  url.searchParams.set("sort", "RELEVANCE");
   const res = await fetch(url.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) });
   if (!res.ok) throw new Error(`europepmc ${res.status}`);
   return (await res.json()) as { hitCount?: number; resultList?: { result?: Array<Record<string, unknown>> } };
@@ -175,7 +174,7 @@ export const searchLiterature = createServerFn({ method: "POST" })
         // Drop papers that don't actually discuss an ingredient (when known)
         // or that lack an abstract to verify relevance.
         const relevant = items.filter((i) =>
-          i.abstract.length > 50 && (ingTerms.length === 0 || (i.matchedIngredients?.length ?? 0) > 0),
+          i.abstract.length > 50 && !/^(retraction|retracted|erratum|correction)\b/i.test(i.title) && (ingTerms.length === 0 || (i.matchedIngredients?.length ?? 0) > 0),
         );
         const highTier = relevant.filter((i) => i.evidenceRank <= 4);
         const pool = highTier.length >= 4 ? highTier : relevant;
