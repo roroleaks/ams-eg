@@ -334,14 +334,14 @@ function Index() {
         });
     }, 600);
     // Transport-level watchdog: the server call self-aborts after ~15s, so the
-    // spinner is always cleared shortly after by this 17s client cap.
+    // spinner is always cleared shortly after by this 60s client cap (search + background validation).
     const watchdog = setTimeout(() => {
       if (cancelled) return;
       setLitLoading(false);
       if (!litSettledRef.current) {
         setLitError("Medical literature search timed out. Showing product results only.");
       }
-    }, 17000);
+    }, 60000);
     return () => {
       cancelled = true;
       clearTimeout(handle);
