@@ -24,6 +24,111 @@ export interface LiteratureItem {
   openAccess?: boolean;
   matchedIngredients?: string[];
   relevance?: number;
+  /** Set by the background validation engine. */
+  validated?: boolean;
+  validationNote?: string;
+}
+
+/**
+ * Background validation engine: an AI reviewer reads each candidate's title
+ * and abstract and confirms it is clinical evidence linking the complaint to
+ * at least one product ingredient. Off-topic papers are removed before the
+ * doctor sees results. If the AI step fails, rule-based results are kept.
+ */
+async function validateEvidence(
+  complaint: string,
+  ingredients: string[],
+  items: LiteratureItem[],
+): Promise<LiteratureItem[]> {
+  if (!items.length) return items;
+  const { getLovableApiKey } = await import("@/lib/lovable-api-key");
+  const key = getLovableApiKey();
+  if (!key) return items;
+  const list = items
+    .map((it, i) => `[${i}] ${it.title}\n${it.abstract.slice(0, 700)}`)
+    .join("\n\n");
+  try {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+        "X-Lovable-AIG-SDK": "fetch",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-6-astra",
+        stream: true,
+        store: false,
+        reasoning: { effort: "low" },
+        instructions:
+          "You are a strict clinical evidence reviewer. For each paper decide if it provides evidence (efficacy, human mechanism, safety, or guideline) about using at least one listed ingredient for the given complaint. Reject unrelated conditions, unrelated interventions, incidental mentions, or non-clinical topics. Return json.",
+        input: `Complaint: ${complaint}\nIngredients: ${ingredients.join(", ") || "(any AMS product component)"}\n\nPapers:\n${list}`,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "verdicts",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["results"],
+              properties: {
+                results: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["i", "keep", "score", "note"],
+                    properties: {
+                      i: { type: "integer" },
+                      keep: { type: "boolean" },
+                      score: { type: "number" },
+                      note: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    });
+    if (!res.ok || !res.body) return items;
+    // Consume the SSE stream and accumulate the JSON output text.
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let raw = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const ev = JSON.parse(payload) as { type?: string; delta?: string };
+          if (ev.type === "response.output_text.delta" && ev.delta) raw += ev.delta;
+        } catch { /* ignore partial */ }
+      }
+    }
+    const parsed = JSON.parse(raw) as {
+      results?: { i: number; keep: boolean; score?: number; note?: string }[];
+    };
+    const verdicts = new Map((parsed.results ?? []).map((r) => [r.i, r]));
+    if (!verdicts.size) return items;
+    return items
+      .map((it, i) => ({ it, v: verdicts.get(i) }))
+      .filter(({ v }) => v?.keep)
+      .sort((a, b) => (b.v?.score ?? 0) - (a.v?.score ?? 0) || a.it.evidenceRank - b.it.evidenceRank)
+      .map(({ it, v }) => ({ ...it, validated: true, validationNote: v?.note?.slice(0, 140) }));
+  } catch {
+    return items;
+  }
 }
 
 // Rank publication types by evidence strength for medical decision-making
@@ -184,9 +289,11 @@ export const searchLiterature = createServerFn({ method: "POST" })
             const sb = (b.relevance ?? 0) + (7 - b.evidenceRank) * 1.2;
             return sb - sa || Number(b.year || 0) - Number(a.year || 0);
           })
-          .slice(0, limit);
+          .slice(0, Math.min(24, limit * 2));
 
-        return { items: chosen, total: j.hitCount ?? chosen.length, error: null };
+        const validated = await validateEvidence(data.query, ingTerms, chosen);
+        const finalItems = validated.slice(0, limit);
+        return { items: finalItems, total: j.hitCount ?? finalItems.length, error: null };
       } catch {
         // Bounded failure: never let a slow/unreachable medical-literature
         // provider leave the UI spinning. Return an empty, graceful result.
