@@ -832,6 +832,11 @@ function Index() {
                             <p className="mt-1 text-xs text-muted-foreground">{l.authors}</p>
                           )}
                           <p className="mt-0.5 text-xs italic text-muted-foreground">{l.journal}</p>
+                          {l.validated && (
+                            <p className="mt-1 text-xs text-primary">
+                              ✓ Validated{l.validationNote ? ` — ${l.validationNote}` : ""}
+                            </p>
+                          )}
                           <LitLinks item={l} />
                         </li>
                       ))}
