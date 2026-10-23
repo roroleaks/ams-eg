@@ -227,8 +227,8 @@ export const searchLiterature = createServerFn({ method: "POST" })
           `NOT SRC:PPR`,
         ].filter(Boolean).join(" AND ");
 
-        let j = await epmc(build(fromYear), 50);
-        if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 50);
+        let j = await epmc(build(fromYear), 100);
+        if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
         const raw = j.resultList?.result ?? [];
 
         const items: LiteratureItem[] = raw.map((r) => {
