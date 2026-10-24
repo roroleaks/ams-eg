@@ -281,10 +281,27 @@ export const searchLiterature = createServerFn({ method: "POST" })
           `NOT PUB_TYPE:"Preprint"`,
           `NOT SRC:PPR`,
         ].filter(Boolean).join(" AND ");
+        // Same logic translated to PubMed E-utilities syntax.
+        const buildPubmed = (from: number) => [
+          toks.length > 1
+            ? `("${clean}"[Title/Abstract] OR (${toks.map((t) => `${t}[Title/Abstract]`).join(" AND ")}))`
+            : `"${clean}"[Title/Abstract]`,
+          ingTerms.length ? `(${ingTerms.map((t) => `"${t}"[Title/Abstract]`).join(" OR ")})` : null,
+          `english[Language]`,
+          `("${from}/01/01"[Date - Publication] : "${toYear}/12/31"[Date - Publication])`,
+          `NOT preprint[Publication Type]`,
+        ].filter(Boolean).join(" AND ");
 
-        let j = await epmc(build(fromYear), 100);
-        if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
-        const raw = j.resultList?.result ?? [];
+        let raw: Array<Record<string, unknown>>;
+        try {
+          let j = await epmc(build(fromYear), 100);
+          if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
+          raw = j.resultList?.result ?? [];
+        } catch {
+          // Europe PMC unreachable/rate-limited: fall back to PubMed directly.
+          raw = await pubmed(buildPubmed(fromYear), 100);
+          if (raw.length < 4) raw = await pubmed(buildPubmed(toYear - 12), 100);
+        }
 
         const items: LiteratureItem[] = raw.map((r) => {
           const pubTypes = (r.pubTypeList as { pubType?: string[] } | undefined)?.pubType ?? [];
