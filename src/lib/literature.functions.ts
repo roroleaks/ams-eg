@@ -311,8 +311,7 @@ export const searchLiterature = createServerFn({ method: "POST" })
           ingTerms.length ? `(${ingTerms.map((t) => `"${t}"[Title/Abstract]`).join(" OR ")})` : null,
           `english[Language]`,
           `("${from}/01/01"[Date - Publication] : "${toYear}/12/31"[Date - Publication])`,
-          `NOT preprint[Publication Type]`,
-        ].filter(Boolean).join(" AND ");
+        ].filter(Boolean).join(" AND ") + " NOT preprint[Publication Type]";
 
         let raw: Array<Record<string, unknown>>;
         try {
