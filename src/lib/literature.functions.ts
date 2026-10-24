@@ -391,6 +391,7 @@ export const searchLiterature = createServerFn({ method: "POST" })
           .filter((i) => i.evidenceRank <= 2)
           .sort((a, b) => a.evidenceRank - b.evidenceRank || (b.relevance ?? 0) - (a.relevance ?? 0) || Number(b.year || 0) - Number(a.year || 0))
           .slice(0, limit);
+        console.error("litDebug", JSON.stringify({ q: data.query, raw: raw.length, mapped: items.length, final: finalItems.length }));
         return { items: finalItems, total: finalItems.length, error: null };
       } catch (err) {
         console.error("searchLiterature failed:", err);
