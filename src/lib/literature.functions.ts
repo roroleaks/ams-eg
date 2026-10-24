@@ -1,6 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { PRODUCT_DB } from "@/data/complaints";
+
+// Clinical synonyms for the searched complaint: if the query matches a known
+// complaint label or alias, search PubMed with every known phrasing of that
+// complaint (e.g. "isolated asthenospermia" also tries "asthenozoospermia").
+function complaintPhrases(query: string): string[] {
+  const clean = query.replace(/["()]/g, "").trim();
+  const n = clean.toLowerCase();
+  const out = new Set<string>([clean]);
+  for (const p of PRODUCT_DB)
+    for (const c of p.complaints) {
+      const texts = [c.label, ...(c.aliases ?? [])];
+      if (texts.some((t) => t.toLowerCase() === n))
+        for (const t of texts) out.add(t);
+    }
+  return [...out].filter((t) => t.length > 2).slice(0, 8);
+}
 
 const Input = z.object({
   query: z.string().min(1).max(500),
