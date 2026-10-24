@@ -229,8 +229,8 @@ async function pubmed(term: string, retmax: number): Promise<Array<Record<string
   const base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
   const es = await ncbiFetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${retmax}&sort=relevance&term=${encodeURIComponent(term)}`, 12000);
   if (!es.ok) throw new Error(`pubmed esearch ${es.status}`);
-  const esJson = (await es.json()) as { esearchresult?: { idlist?: string[]; count?: string; error?: string } };
-  console.error("pubmedDebug", es.status, "count:", esJson.esearchresult?.count, "err:", esJson.esearchresult?.error, "|", term.slice(0, 100));
+  const esJson = (await es.json()) as { esearchresult?: { idlist?: string[]; count?: string; error?: string; querytranslation?: string } };
+  console.error("pubmedDebug", es.status, "count:", esJson.esearchresult?.count, "err:", esJson.esearchresult?.error, "translation:", esJson.esearchresult?.querytranslation, "| term:", term);
   const ids = esJson.esearchresult?.idlist ?? [];
   if (!ids.length) return [];
   const ef = await ncbiFetch(`${base}/efetch.fcgi?db=pubmed&retmode=xml&id=${ids.join(",")}`, 15000);
