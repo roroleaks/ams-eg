@@ -304,9 +304,10 @@ export const searchLiterature = createServerFn({ method: "POST" })
         const ingTerms = ingredientTerms(data.ingredients ?? []);
         const toks = complaintTokens(data.query);
         const clean = data.query.replace(/["()]/g, "");
+        const phrases = complaintPhrases(data.query);
         const complaintClause = toks.length > 1
-          ? `(TITLE_ABS:"${clean}" OR (${toks.map((t) => `TITLE_ABS:${t}`).join(" AND ")}))`
-          : `TITLE_ABS:"${clean}"`;
+          ? `(${phrases.map((p) => `TITLE_ABS:"${p}"`).join(" OR ")} OR (${toks.map((t) => `TITLE_ABS:${t}`).join(" AND ")}))`
+          : `(${phrases.map((p) => `TITLE_ABS:"${p}"`).join(" OR ")})`;
         const ingClause = ingTerms.length
           ? `(${ingTerms.map((t) => `TITLE_ABS:"${t}"`).join(" OR ")})`
           : null;
@@ -322,8 +323,8 @@ export const searchLiterature = createServerFn({ method: "POST" })
         // Same logic translated to PubMed E-utilities syntax.
         const buildPubmed = (from: number) => [
           toks.length > 1
-            ? `("${clean}"[Title/Abstract] OR (${toks.map((t) => `${t}[Title/Abstract]`).join(" AND ")}))`
-            : `"${clean}"[Title/Abstract]`,
+            ? `(${phrases.map((p) => `"${p}"[Title/Abstract]`).join(" OR ")} OR (${toks.map((t) => `${t}[Title/Abstract]`).join(" AND ")}))`
+            : `(${phrases.map((p) => `"${p}"[Title/Abstract]`).join(" OR ")})`,
           ingTerms.length ? `(${ingTerms.map((t) => `"${t}"[Title/Abstract]`).join(" OR ")})` : null,
           `english[Language]`,
           `("${from}/01/01"[Date - Publication] : "${toYear}/12/31"[Date - Publication])`,
