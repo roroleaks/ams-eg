@@ -313,8 +313,9 @@ export const searchLiterature = createServerFn({ method: "POST" })
         const toks = complaintTokens(data.query);
         const clean = data.query.replace(/["()]/g, "");
         const phrases = complaintPhrases(data.query);
-        const complaintClause = toks.length > 1
-          ? `(${phrases.map((p) => `TITLE_ABS:"${p}"`).join(" OR ")} OR (${toks.map((t) => `TITLE_ABS:${t}`).join(" AND ")}))`
+        const core = coreTokens(toks);
+        const complaintClause = core.length > 1
+          ? `(${phrases.map((p) => `TITLE_ABS:"${p}"`).join(" OR ")} OR (${core.map((t) => `TITLE_ABS:${t}`).join(" AND ")}))`
           : `(${phrases.map((p) => `TITLE_ABS:"${p}"`).join(" OR ")})`;
         const ingClause = ingTerms.length
           ? `(${ingTerms.map((t) => `TITLE_ABS:"${t}"`).join(" OR ")})`
@@ -330,8 +331,8 @@ export const searchLiterature = createServerFn({ method: "POST" })
         ].filter(Boolean).join(" AND ");
         // Same logic translated to PubMed E-utilities syntax.
         const buildPubmed = (from: number) => [
-          toks.length > 1
-            ? `(${phrases.map((p) => `"${p}"[Title/Abstract]`).join(" OR ")} OR (${toks.map((t) => `${t}[Title/Abstract]`).join(" AND ")}))`
+          core.length > 1
+            ? `(${phrases.map((p) => `"${p}"[Title/Abstract]`).join(" OR ")} OR (${core.map((t) => `${t}[Title/Abstract]`).join(" AND ")}))`
             : `(${phrases.map((p) => `"${p}"[Title/Abstract]`).join(" OR ")})`,
           ingTerms.length ? `(${ingTerms.map((t) => `"${t}"[Title/Abstract]`).join(" OR ")})` : null,
           `english[Language]`,
