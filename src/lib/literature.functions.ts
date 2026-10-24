@@ -188,6 +188,14 @@ function ingredientTerms(names: string[]): string[] {
 }
 
 const STOP = new Set(["the","and","or","of","in","for","with","to","a","an","on","due","patient","women","men"]);
+// Qualifier words that must not be required in the keyword fallback: a paper
+// about "uterine fibroid" is relevant to "small uterine fibroid" even if it
+// never says "small".
+const QUALIFIER = new Set(["small","medium","severe","low","high","first","second","isolated","suspected","diagnosed","confirmed","possible","poor","progressive","recurrent","young","advanced","stage","grade","below","related","pre","post","operative","support","index","rate","level","concentration","changes","cyclic","cyclical","benign","triple","defect","idiopathic","unexplained"]);
+function coreTokens(toks: string[]): string[] {
+  const core = toks.filter((t) => !QUALIFIER.has(t) && !/^\d+$/.test(t));
+  return core.length ? core : toks;
+}
 function complaintTokens(q: string): string[] {
   return q.toLowerCase().replace(/[^a-z0-9\- ]+/g, " ").split(/\s+/).filter((t) => t.length > 2 && !STOP.has(t));
 }
