@@ -186,6 +186,61 @@ async function epmc(query: string, pageSize: number) {
   return (await res.json()) as { hitCount?: number; resultList?: { result?: Array<Record<string, unknown>> } };
 }
 
+// ---- PubMed (NCBI E-utilities) fallback ---------------------------------
+// Used when the Europe PMC gateway is unreachable or rate-limiting. Returns
+// records in the same shape Europe PMC produces so downstream ranking and
+// filtering run unchanged.
+
+function xmlText(s: string): string {
+  return s
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'").replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ").trim();
+}
+
+function tag(block: string, name: string): string {
+  const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`));
+  return m ? xmlText(m[1]) : "";
+}
+
+async function pubmed(term: string, retmax: number): Promise<Array<Record<string, unknown>>> {
+  const base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
+  const es = await fetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${retmax}&sort=relevance&term=${encodeURIComponent(term)}`, { signal: AbortSignal.timeout(12000) });
+  if (!es.ok) throw new Error(`pubmed esearch ${es.status}`);
+  const ids = ((await es.json()) as { esearchresult?: { idlist?: string[] } }).esearchresult?.idlist ?? [];
+  if (!ids.length) return [];
+  await new Promise((r) => setTimeout(r, 400)); // stay under NCBI rate limits
+  const ef = await fetch(`${base}/efetch.fcgi?db=pubmed&retmode=xml&id=${ids.join(",")}`, { signal: AbortSignal.timeout(15000) });
+  if (!ef.ok) throw new Error(`pubmed efetch ${ef.status}`);
+  const xml = await ef.text();
+  const out: Array<Record<string, unknown>> = [];
+  for (const m of xml.matchAll(/<PubmedArticle>[\s\S]*?<\/PubmedArticle>/g)) {
+    const a = m[0];
+    const pmid = tag(a, "PMID");
+    const authors = [...a.matchAll(/<Author[\s>][\s\S]*?<\/Author>/g)].slice(0, 40).map((x) => {
+      const last = tag(x[0], "LastName"); const init = tag(x[0], "Initials");
+      return last ? `${last} ${init}`.trim() : tag(x[0], "CollectiveName");
+    }).filter(Boolean);
+    const pubTypes = [...a.matchAll(/<PublicationType[^>]*>([\s\S]*?)<\/PublicationType>/g)].map((x) => xmlText(x[1]));
+    const doi = a.match(/<ArticleId IdType="doi">([^<]+)<\/ArticleId>/)?.[1]?.trim() ?? null;
+    const pmcRaw = a.match(/<ArticleId IdType="pmc">([^<]+)<\/ArticleId>/)?.[1]?.trim() ?? null;
+    const pmcid = pmcRaw ? (pmcRaw.startsWith("PMC") ? pmcRaw : `PMC${pmcRaw}`) : null;
+    const year = tag(a, "Year") || a.match(/<MedlineDate>(\d{4})/)?.[1] || "";
+    out.push({
+      title: tag(a, "ArticleTitle"),
+      abstractText: tag(a, "Abstract"),
+      authorString: authors.join(", ").slice(0, 600),
+      journalTitle: tag(a, "Title") && a.includes("<Journal>") ? tag(a.slice(a.indexOf("<Journal>")), "Title") : "",
+      pubYear: year,
+      doi, pmid, pmcid,
+      isOpenAccess: pmcid ? "Y" : "N",
+      pubTypeList: { pubType: pubTypes },
+    });
+  }
+  return out;
+}
+
 export const searchLiterature = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .middleware([requireSupabaseAuth])
