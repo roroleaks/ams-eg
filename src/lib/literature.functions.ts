@@ -229,8 +229,7 @@ async function pubmed(term: string, retmax: number): Promise<Array<Record<string
   const base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
   const es = await ncbiFetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${retmax}&sort=relevance&term=${encodeURIComponent(term)}`, 12000);
   if (!es.ok) throw new Error(`pubmed esearch ${es.status}`);
-  const esJson = (await es.json()) as { esearchresult?: { idlist?: string[]; count?: string; error?: string; querytranslation?: string } };
-  console.error("pubmedDebug", es.status, "count:", esJson.esearchresult?.count, "err:", esJson.esearchresult?.error, "translation:", esJson.esearchresult?.querytranslation, "| term:", term);
+  const esJson = (await es.json()) as { esearchresult?: { idlist?: string[] } };
   const ids = esJson.esearchresult?.idlist ?? [];
   if (!ids.length) return [];
   const ef = await ncbiFetch(`${base}/efetch.fcgi?db=pubmed&retmode=xml&id=${ids.join(",")}`, 15000);
@@ -392,7 +391,6 @@ export const searchLiterature = createServerFn({ method: "POST" })
           .filter((i) => i.evidenceRank <= 2)
           .sort((a, b) => a.evidenceRank - b.evidenceRank || (b.relevance ?? 0) - (a.relevance ?? 0) || Number(b.year || 0) - Number(a.year || 0))
           .slice(0, limit);
-        console.error("litDebug", JSON.stringify({ q: data.query, raw: raw.length, mapped: items.length, final: finalItems.length }));
         return { items: finalItems, total: finalItems.length, error: null };
       } catch (err) {
         console.error("searchLiterature failed:", err);
