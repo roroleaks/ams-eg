@@ -1,6 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { PRODUCT_DB } from "@/data/complaints";
+
+// Clinical synonyms for the searched complaint: if the query matches a known
+// complaint label or alias, search PubMed with every known phrasing of that
+// complaint (e.g. "isolated asthenospermia" also tries "asthenozoospermia").
+function complaintPhrases(query: string): string[] {
+  const clean = query.replace(/["()]/g, "").trim();
+  const n = clean.toLowerCase();
+  const out = new Set<string>([clean]);
+  for (const p of PRODUCT_DB)
+    for (const c of p.complaints) {
+      const texts = [c.label, ...(c.aliases ?? [])];
+      if (texts.some((t) => t.toLowerCase() === n))
+        for (const t of texts) out.add(t);
+    }
+  return [...out].filter((t) => t.length > 2).slice(0, 8);
+}
 
 const Input = z.object({
   query: z.string().min(1).max(500),
@@ -171,6 +188,14 @@ function ingredientTerms(names: string[]): string[] {
 }
 
 const STOP = new Set(["the","and","or","of","in","for","with","to","a","an","on","due","patient","women","men"]);
+// Qualifier words that must not be required in the keyword fallback: a paper
+// about "uterine fibroid" is relevant to "small uterine fibroid" even if it
+// never says "small".
+const QUALIFIER = new Set(["small","medium","severe","low","high","first","second","isolated","suspected","diagnosed","confirmed","possible","poor","progressive","recurrent","young","advanced","stage","grade","below","related","pre","post","operative","support","index","rate","level","concentration","changes","cyclic","cyclical","benign","triple","defect","idiopathic","unexplained"]);
+function coreTokens(toks: string[]): string[] {
+  const core = toks.filter((t) => !QUALIFIER.has(t) && !/^\d+$/.test(t));
+  return core.length ? core : toks;
+}
 function complaintTokens(q: string): string[] {
   return q.toLowerCase().replace(/[^a-z0-9\- ]+/g, " ").split(/\s+/).filter((t) => t.length > 2 && !STOP.has(t));
 }
@@ -184,6 +209,82 @@ async function epmc(query: string, pageSize: number) {
   const res = await fetch(url.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) });
   if (!res.ok) throw new Error(`europepmc ${res.status}`);
   return (await res.json()) as { hitCount?: number; resultList?: { result?: Array<Record<string, unknown>> } };
+}
+
+// ---- PubMed (NCBI E-utilities) fallback ---------------------------------
+// Used when the Europe PMC gateway is unreachable or rate-limiting. Returns
+// records in the same shape Europe PMC produces so downstream ranking and
+// filtering run unchanged.
+
+function xmlText(s: string): string {
+  return s
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'").replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ").trim();
+}
+
+function tag(block: string, name: string): string {
+  const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`));
+  return m ? xmlText(m[1]) : "";
+}
+
+// NCBI allows ~3 requests/second per client; serialize and back off on 429.
+let ncbiQueue: Promise<unknown> = Promise.resolve();
+function ncbiFetch(url: string, timeoutMs: number): Promise<Response> {
+  const run = ncbiQueue.then(async () => {
+    let lastErr: unknown = new Error("ncbi unavailable");
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+        if (res.status !== 429) return res;
+        lastErr = new Error("ncbi 429");
+      } catch (e) {
+        lastErr = e;
+      }
+      await new Promise((r) => setTimeout(r, 800 * (attempt + 1) * (attempt + 1)));
+    }
+    throw lastErr;
+  });
+  ncbiQueue = run.catch(() => {}).then(() => new Promise((r) => setTimeout(r, 450)));
+  return run;
+}
+
+async function pubmed(term: string, retmax: number): Promise<Array<Record<string, unknown>>> {
+  const base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
+  const es = await ncbiFetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${retmax}&sort=relevance&term=${encodeURIComponent(term)}`, 12000);
+  if (!es.ok) throw new Error(`pubmed esearch ${es.status}`);
+  const esJson = (await es.json()) as { esearchresult?: { idlist?: string[] } };
+  const ids = esJson.esearchresult?.idlist ?? [];
+  if (!ids.length) return [];
+  const ef = await ncbiFetch(`${base}/efetch.fcgi?db=pubmed&retmode=xml&id=${ids.join(",")}`, 15000);
+  if (!ef.ok) throw new Error(`pubmed efetch ${ef.status}`);
+  const xml = await ef.text();
+  const out: Array<Record<string, unknown>> = [];
+  for (const m of xml.matchAll(/<PubmedArticle>[\s\S]*?<\/PubmedArticle>/g)) {
+    const a = m[0];
+    const pmid = tag(a, "PMID");
+    const authors = [...a.matchAll(/<Author[\s>][\s\S]*?<\/Author>/g)].slice(0, 40).map((x) => {
+      const last = tag(x[0], "LastName"); const init = tag(x[0], "Initials");
+      return last ? `${last} ${init}`.trim() : tag(x[0], "CollectiveName");
+    }).filter(Boolean);
+    const pubTypes = [...a.matchAll(/<PublicationType[^>]*>([\s\S]*?)<\/PublicationType>/g)].map((x) => xmlText(x[1]));
+    const doi = a.match(/<ArticleId IdType="doi">([^<]+)<\/ArticleId>/)?.[1]?.trim() ?? null;
+    const pmcRaw = a.match(/<ArticleId IdType="pmc">([^<]+)<\/ArticleId>/)?.[1]?.trim() ?? null;
+    const pmcid = pmcRaw ? (pmcRaw.startsWith("PMC") ? pmcRaw : `PMC${pmcRaw}`) : null;
+    const year = tag(a, "Year") || a.match(/<MedlineDate>(\d{4})/)?.[1] || "";
+    out.push({
+      title: tag(a, "ArticleTitle"),
+      abstractText: tag(a, "Abstract"),
+      authorString: authors.join(", ").slice(0, 600),
+      journalTitle: tag(a, "Title") && a.includes("<Journal>") ? tag(a.slice(a.indexOf("<Journal>")), "Title") : "",
+      pubYear: year,
+      doi, pmid, pmcid,
+      isOpenAccess: pmcid ? "Y" : "N",
+      pubTypeList: { pubType: pubTypes },
+    });
+  }
+  return out;
 }
 
 export const searchLiterature = createServerFn({ method: "POST" })
@@ -211,9 +312,9 @@ export const searchLiterature = createServerFn({ method: "POST" })
         const ingTerms = ingredientTerms(data.ingredients ?? []);
         const toks = complaintTokens(data.query);
         const clean = data.query.replace(/["()]/g, "");
-        const complaintClause = toks.length > 1
-          ? `(TITLE_ABS:"${clean}" OR (${toks.map((t) => `TITLE_ABS:${t}`).join(" AND ")}))`
-          : `TITLE_ABS:"${clean}"`;
+        const phrases = complaintPhrases(data.query);
+        const core = coreTokens(toks);
+        const complaintClause = `(${phrases.map((p) => `TITLE_ABS:"${p}"`).join(" OR ")} OR (${core.map((t) => `TITLE_ABS:${t}`).join(" AND ")}))`;
         const ingClause = ingTerms.length
           ? `(${ingTerms.map((t) => `TITLE_ABS:"${t}"`).join(" OR ")})`
           : null;
@@ -226,10 +327,24 @@ export const searchLiterature = createServerFn({ method: "POST" })
           `NOT PUB_TYPE:"Preprint"`,
           `NOT SRC:PPR`,
         ].filter(Boolean).join(" AND ");
+        // Same logic translated to PubMed E-utilities syntax.
+        const buildPubmed = (from: number) => [
+          `(${phrases.map((p) => `"${p}"[Title/Abstract]`).join(" OR ")} OR (${core.map((t) => `${t}[Title/Abstract]`).join(" AND ")}))`,
+          ingTerms.length ? `(${ingTerms.map((t) => `"${t}"[Title/Abstract]`).join(" OR ")})` : null,
+          `english[Language]`,
+          `("${from}/01/01"[Date - Publication] : "${toYear}/12/31"[Date - Publication])`,
+        ].filter(Boolean).join(" AND ") + " NOT preprint[Publication Type]";
 
-        let j = await epmc(build(fromYear), 100);
-        if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
-        const raw = j.resultList?.result ?? [];
+        let raw: Array<Record<string, unknown>>;
+        try {
+          let j = await epmc(build(fromYear), 100);
+          if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
+          raw = j.resultList?.result ?? [];
+        } catch {
+          // Europe PMC unreachable/rate-limited: fall back to PubMed directly.
+          raw = await pubmed(buildPubmed(fromYear), 100);
+          if (raw.length < 4) raw = await pubmed(buildPubmed(toYear - 12), 100);
+        }
 
         const items: LiteratureItem[] = raw.map((r) => {
           const pubTypes = (r.pubTypeList as { pubType?: string[] } | undefined)?.pubType ?? [];
@@ -300,7 +415,8 @@ export const searchLiterature = createServerFn({ method: "POST" })
           .sort((a, b) => a.evidenceRank - b.evidenceRank || (b.relevance ?? 0) - (a.relevance ?? 0) || Number(b.year || 0) - Number(a.year || 0))
           .slice(0, limit);
         return { items: finalItems, total: finalItems.length, error: null };
-      } catch {
+      } catch (err) {
+        console.error("searchLiterature failed:", err);
         // Bounded failure: never let a slow/unreachable medical-literature
         // provider leave the UI spinning. Return an empty, graceful result.
         return {
