@@ -372,7 +372,8 @@ export const searchLiterature = createServerFn({ method: "POST" })
           .sort((a, b) => a.evidenceRank - b.evidenceRank || (b.relevance ?? 0) - (a.relevance ?? 0) || Number(b.year || 0) - Number(a.year || 0))
           .slice(0, limit);
         return { items: finalItems, total: finalItems.length, error: null };
-      } catch {
+      } catch (err) {
+        console.error("searchLiterature failed:", err);
         // Bounded failure: never let a slow/unreachable medical-literature
         // provider leave the UI spinning. Return an empty, graceful result.
         return {
