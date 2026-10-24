@@ -204,14 +204,34 @@ function tag(block: string, name: string): string {
   return m ? xmlText(m[1]) : "";
 }
 
+// NCBI allows ~3 requests/second per client; serialize and back off on 429.
+let ncbiQueue: Promise<unknown> = Promise.resolve();
+function ncbiFetch(url: string, timeoutMs: number): Promise<Response> {
+  const run = ncbiQueue.then(async () => {
+    let lastErr: unknown = new Error("ncbi unavailable");
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+        if (res.status !== 429) return res;
+        lastErr = new Error("ncbi 429");
+      } catch (e) {
+        lastErr = e;
+      }
+      await new Promise((r) => setTimeout(r, 800 * (attempt + 1) * (attempt + 1)));
+    }
+    throw lastErr;
+  });
+  ncbiQueue = run.catch(() => {}).then(() => new Promise((r) => setTimeout(r, 450)));
+  return run;
+}
+
 async function pubmed(term: string, retmax: number): Promise<Array<Record<string, unknown>>> {
   const base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
-  const es = await fetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${retmax}&sort=relevance&term=${encodeURIComponent(term)}`, { signal: AbortSignal.timeout(12000) });
+  const es = await ncbiFetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${retmax}&sort=relevance&term=${encodeURIComponent(term)}`, 12000);
   if (!es.ok) throw new Error(`pubmed esearch ${es.status}`);
   const ids = ((await es.json()) as { esearchresult?: { idlist?: string[] } }).esearchresult?.idlist ?? [];
   if (!ids.length) return [];
-  await new Promise((r) => setTimeout(r, 400)); // stay under NCBI rate limits
-  const ef = await fetch(`${base}/efetch.fcgi?db=pubmed&retmode=xml&id=${ids.join(",")}`, { signal: AbortSignal.timeout(15000) });
+  const ef = await ncbiFetch(`${base}/efetch.fcgi?db=pubmed&retmode=xml&id=${ids.join(",")}`, 15000);
   if (!ef.ok) throw new Error(`pubmed efetch ${ef.status}`);
   const xml = await ef.text();
   const out: Array<Record<string, unknown>> = [];
