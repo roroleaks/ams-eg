@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evidenceTier, qualifiesEvidence, dedupeEvidenceRaw, mentions } from "./literature-relevance";
+import { evidenceTier, qualifiesEvidence, dedupeEvidenceRaw, mentions, supportsProduct } from "./literature-relevance";
 const paper = { title: "Myo-inositol for PCOS: a randomized controlled trial", abstract: "Methods: Women with PCOS were randomly assigned to myo-inositol supplementation or placebo. Results: Ovulation outcomes were assessed in all participants.", pubType: "Journal Article", year: "2025", doi: "10.1234/test" };
 const valid = (p = paper) => qualifiesEvidence(p, ["PCOS", "polycystic ovary syndrome"], ["pcos"], ["myo-inositol"], 2021, 2026);
 describe("Tier 1 and Tier 2 clinical evidence only", () => {
@@ -23,6 +23,8 @@ describe("Complaint, ingredient and current-year relevance", () => {
   it("rejects records without a real article identifier", () => { expect(valid({...paper,doi:""})).toBe(false); });
   it("rejects biomarker-only reviews without therapeutic intent", () => { expect(valid({...paper,title:"Myo-inositol concentrations in PCOS: a systematic review",abstract:"We assessed myo-inositol concentrations in women with PCOS. This systematic review evaluated prevalence and serum levels across observational cohorts."})).toBe(false); });
   it("matches ingredients as words not substrings", () => { expect(mentions("iron supplementation","iron")).toBe(true); expect(mentions("environmental exposures","iron")).toBe(false); });
+  it("does not assign a vitamin D paper to a CoQ10-only product", () => { expect(supportsProduct({...paper,title:"Vitamin D in PCOS: systematic review",abstract:"Vitamin D supplementation in PCOS was assessed across randomized trials."},["Coenzyme Q10 (ubiquinone)"])).toBe(false); });
+  it("assigns evidence only to products containing the studied ingredient", () => { expect(supportsProduct(paper,["Myo-inositol"])).toBe(true); });
 });
 describe("Cross-database duplicate evidence", () => {
   it("keeps one canonical paper when a later record adds a DOI", () => { const r=dedupeEvidenceRaw([{title:paper.title,pmid:"123",abstractText:"short",source:"PubMed"},{title:paper.title,doi:paper.doi,abstractText:"longer text",source:"Crossref"}]); expect(r).toHaveLength(1); expect(r[0]?.pmid).toBe("123"); expect(r[0]?.doi).toBe(paper.doi); expect(r[0]?.abstractText).toBe("short"); });

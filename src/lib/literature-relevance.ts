@@ -15,6 +15,14 @@ export function mentions(text: string, phrase: string): boolean {
   return !!p && (` ${normalize(text)} `).includes(` ${p} `);
 }
 
+export function supportsProduct(i: EvidenceCandidate, ingredients: string[]): boolean {
+  return ingredients.some(name => {
+    const base = name.replace(/\([^)]*\)/g, "").replace(/\bextract\b/gi, "").trim();
+    const aliases = name.match(/\(([^)]+)\)/)?.[1]?.split(/[,/]/) ?? [];
+    return [base, ...aliases].some(term => term.trim().length > 2 && mentions(`${i.title} ${i.abstract}`, term));
+  });
+}
+
 const NOTICE = /\b(retract(?:ed|ion)|erratum|corrigendum|expression of concern|author'?s? reply|study protocol)\b|^(?:correction|comment|letter|reply)\b/i;
 const PRECLINICAL = /\b(mice|mouse|murine|rats?|rodents?|zebrafish|rabbits?|chickens?|roosters?|poultry|broilers?|heifers?|bovine|porcine|livestock|cell lines?|cell culture|granulosa cells|animal model|in vitro study|in vitro experiment)\b/i;
 const SYSTEMATIC = /\b(systematic (?:review|literature review)|meta[ -]analys(?:is|es)|practice guideline|consensus statement)\b/i;

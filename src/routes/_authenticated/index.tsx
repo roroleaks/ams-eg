@@ -36,6 +36,7 @@ import { embedQuery } from "@/lib/embed.functions";
 import { summarizeProductReport } from "@/lib/product-report.functions";
 import { PRODUCT_INGREDIENTS } from "@/data/product-ingredients";
 import { searchLiterature, type LiteratureItem } from "@/lib/literature.functions";
+import { supportsProduct } from "@/lib/literature-relevance";
 import { logSearch } from "@/lib/analytics.functions";
 import {
   touchProfile,
@@ -1352,14 +1353,15 @@ function ProductCard({
       .toLowerCase()
       .split(/[^a-z0-9]+/)
       .filter((t) => t.length > 3);
-    const scored = literature.map((l) => {
+    const ingredients = (PRODUCT_INGREDIENTS[match.product] ?? []).map(i => i.name);
+    const scored = literature.filter(l => supportsProduct(l, ingredients)).map((l) => {
       const hay = `${l.title} ${l.abstract}`.toLowerCase();
       const hits = terms.reduce((s, t) => s + (hay.includes(t) ? 1 : 0), 0);
       return { l, hits };
     });
     scored.sort((a, b) => b.hits - a.hits || a.l.evidenceRank - b.l.evidenceRank);
     return scored.slice(0, 2).map((s) => s.l);
-  }, [literature, complaint, match.matchedIndications]);
+  }, [literature, complaint, match.matchedIndications, match.product]);
 
   return (
     <article
