@@ -1,1 +1,2 @@
 Keep the copyright line in the shared root layout rather than individual pages, so all app screens show the same text without duplication.
+Keep deterministic literature qualification and cross-source deduplication in the browser-safe literature-relevance module so the production search and regression tests use identical rules.
