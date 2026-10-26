@@ -16,17 +16,17 @@ export function mentions(text: string, phrase: string): boolean {
 }
 
 const NOTICE = /\b(retract(?:ed|ion)|erratum|corrigendum|expression of concern|author'?s? reply|study protocol)\b|^(?:correction|comment|letter|reply)\b/i;
-const PRECLINICAL = /\b(mice|mouse|murine|rats?|rodents?|zebrafish|cell lines?|cell culture|granulosa cells|animal model|in vitro study|in vitro experiment)\b/i;
+const PRECLINICAL = /\b(mice|mouse|murine|rats?|rodents?|zebrafish|rabbits?|chickens?|roosters?|poultry|broilers?|heifers?|bovine|porcine|livestock|cell lines?|cell culture|granulosa cells|animal model|in vitro study|in vitro experiment)\b/i;
 const SYSTEMATIC = /\b(systematic (?:review|literature review)|meta[ -]analys(?:is|es)|practice guideline|consensus statement)\b/i;
 const TRIAL = /\b(randomi[sz]ed(?: controlled)? (?:clinical )?(?:trial|study)|randomi[sz]ed[ ,\w-]{0,50}(?:placebo|double[ -]blind|controlled)|placebo[ -]controlled|double[ -]blind)\b/i;
 
 export function evidenceTier(i: EvidenceCandidate): number {
   if (NOTICE.test(i.title) || /\b(protocol|preprint|editorial|letter|comment|retracted publication|retraction of publication)\b/i.test(i.pubType)) return 9;
-  if (PRECLINICAL.test(i.title)) return 9;
+  if (PRECLINICAL.test(i.title) || PRECLINICAL.test(i.abstract)) return 9;
   // A narrative review is not an RCT just because it discusses randomized trials.
   if (/\b(narrative|scoping|umbrella) review\b/i.test(i.title)) return 9;
   if (SYSTEMATIC.test(i.title) || /^(?:.*;\s*)?(?:Guideline|Practice Guideline|Consensus Development Conference|Systematic Review|Meta-Analysis)(?:;|$)/i.test(i.pubType)) return 1;
-  const methods = i.abstract.match(/(?:^|[.!?]\s*|\n)(?:methods?|methodology|study design|design)\s*[:.]?\s*([\s\S]*?)(?=\b(?:results?|conclusions?)\s*[:.]|$)/i)?.[1] ?? "";
+  const methods = i.abstract.match(/\b(?:materials and methods|methods?|methodology|study design|design)\s*[:.]?\s*([\s\S]*?)(?=\b(?:results?|conclusions?)\s*[:.]|$)/i)?.[1] ?? "";
   if (/\b(non[ -]randomi[sz]ed|observational|retrospective|single[ -]arm)\b/i.test(`${i.title} ${methods}`)) return 9;
   if (PRECLINICAL.test(methods)) return 9;
   if (/\breview\b/i.test(i.pubType) || /\b(?:literature|narrative|scoping) review\b/i.test(methods)) {
@@ -48,6 +48,8 @@ export function qualifiesEvidence(i: EvidenceCandidate, phrases: string[], core:
   // Both must occur in the abstract: a wrongly associated publisher abstract must
   // never inherit evidence strength or relevance from its unrelated title.
   if (!topic(i.abstract) || !ingredients.some(t => mentions(i.abstract, t))) return false;
+  // Biomarker/prevalence surveys are not evidence of administering the ingredient.
+  if (!/\b(supplement(?:s|ation|ed)?|treat(?:ment|ed|ing)?|therap(?:y|ies|eutic)|administ(?:ered|ration)|intervention|efficacy|placebo|prophylaxis|prevention|safety|adverse)\b/i.test(i.abstract)) return false;
   const sentences = i.abstract.split(/(?<=[.!?])\s+|\n/);
   return sentences.some(s => topic(s) && ingredients.some(t => mentions(s, t))) ||
     (topic(i.title) && ingredients.some(t => mentions(i.title, t)));

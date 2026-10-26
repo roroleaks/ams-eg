@@ -10,6 +10,9 @@ describe("Tier 1 and Tier 2 clinical evidence only", () => {
   it("does not promote an observational paper citing a prior meta-analysis", () => { expect(evidenceTier({...paper,title:"Inositol concentrations in PCOS",abstract:"A systematic review supports inositol. Methods: An observational study measured levels in 90 women."})).toBe(9); });
   it("rejects animal experiments even when patients appear in background", () => { expect(evidenceTier({...paper,title:"Inositol and PCOS",abstract:"PCOS affects patients. Methods: Rats were randomized to inositol or placebo. Results: Changes were recorded."})).toBe(9); });
   it("rejects expressions of concern", () => { expect(valid({...paper,title:"Expression of concern: Myo-inositol for PCOS: a randomized controlled trial"})).toBe(false); });
+  it("rejects livestock trials", () => { expect(evidenceTier({...paper,title:"Vitamin E administration in pregnant dairy heifers: randomized trial"})).toBe(9); });
+  it("rejects poultry meta-analyses", () => { expect(evidenceTier({...paper,title:"Effect of vitamin E supplementation on chicken sperm quality: a meta-analysis"})).toBe(9); });
+  it("recognizes compact provider Methods headings", () => { expect(evidenceTier({...paper,title:"Inositol in PCOS",abstract:"BackgroundPCOS is common. MethodsWomen with PCOS were randomized to myo-inositol or placebo. ResultsOvulation improved."})).toBe(2); });
 });
 describe("Complaint, ingredient and current-year relevance", () => {
   it("rejects an ingredient trial for the wrong complaint", () => { expect(valid({...paper,abstract:paper.abstract.replace("PCOS","diabetes")})).toBe(false); });
@@ -18,6 +21,7 @@ describe("Complaint, ingredient and current-year relevance", () => {
   it("rejects papers older than the requested five-year window", () => { expect(valid({...paper,year:"2014"})).toBe(false); });
   it("rejects future-year papers", () => { expect(valid({...paper,year:"2027"})).toBe(false); });
   it("rejects records without a real article identifier", () => { expect(valid({...paper,doi:""})).toBe(false); });
+  it("rejects biomarker-only reviews without therapeutic intent", () => { expect(valid({...paper,title:"Myo-inositol concentrations in PCOS: a systematic review",abstract:"We assessed myo-inositol concentrations in women with PCOS. This systematic review evaluated prevalence and serum levels across observational cohorts."})).toBe(false); });
   it("matches ingredients as words not substrings", () => { expect(mentions("iron supplementation","iron")).toBe(true); expect(mentions("environmental exposures","iron")).toBe(false); });
 });
 describe("Cross-database duplicate evidence", () => {
