@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { PRODUCT_DB } from "@/data/complaints";
+import { dedupeEvidenceRaw, evidenceTier, mentions, qualifiesEvidence } from "@/lib/literature-relevance";
 
 // Clinical synonyms for the searched complaint: if the query matches a known
 // complaint label or alias, search PubMed with every known phrasing of that
@@ -46,125 +47,7 @@ export interface LiteratureItem {
   validationNote?: string;
 }
 
-/**
- * Background validation engine: an AI reviewer reads each candidate's title
- * and abstract and confirms it is clinical evidence linking the complaint to
- * at least one product ingredient. Off-topic papers are removed before the
- * doctor sees results. If the AI step fails, rule-based results are kept.
- */
-async function validateEvidence(
-  complaint: string,
-  ingredients: string[],
-  items: LiteratureItem[],
-): Promise<LiteratureItem[]> {
-  if (!items.length) return items;
-  const { getLovableApiKey } = await import("@/lib/lovable-api-key");
-  const key = getLovableApiKey();
-  if (!key) return items;
-  const list = items
-    .map((it, i) => `[${i}] ${it.title}\n${it.abstract.slice(0, 700)}`)
-    .join("\n\n");
-  try {
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-        "X-Lovable-AIG-SDK": "fetch",
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-6-astra",
-        stream: true,
-        store: false,
-        reasoning: { effort: "low" },
-        instructions:
-          "You are a strict clinical evidence reviewer. For each paper decide if it provides evidence (efficacy, human mechanism, safety, or guideline) about using at least one listed ingredient for the given complaint. Reject unrelated conditions, unrelated interventions, incidental mentions, or non-clinical topics. Return json.",
-        input: `Complaint: ${complaint}\nIngredients: ${ingredients.join(", ") || "(any AMS product component)"}\n\nPapers:\n${list}`,
-        text: {
-          format: {
-            type: "json_schema",
-            name: "verdicts",
-            strict: true,
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              required: ["results"],
-              properties: {
-                results: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    required: ["i", "keep", "score", "note"],
-                    properties: {
-                      i: { type: "integer" },
-                      keep: { type: "boolean" },
-                      score: { type: "number" },
-                      note: { type: "string" },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      }),
-    });
-    if (!res.ok || !res.body) return items;
-    // Consume the SSE stream and accumulate the JSON output text.
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "";
-    let raw = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let nl: number;
-      while ((nl = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const ev = JSON.parse(payload) as { type?: string; delta?: string };
-          if (ev.type === "response.output_text.delta" && ev.delta) raw += ev.delta;
-        } catch { /* ignore partial */ }
-      }
-    }
-    const parsed = JSON.parse(raw) as {
-      results?: { i: number; keep: boolean; score?: number; note?: string }[];
-    };
-    const verdicts = new Map((parsed.results ?? []).map((r) => [r.i, r]));
-    if (!verdicts.size) return items;
-    return items
-      .map((it, i) => ({ it, v: verdicts.get(i) }))
-      .filter(({ v }) => v?.keep)
-      .sort((a, b) => (b.v?.score ?? 0) - (a.v?.score ?? 0) || a.it.evidenceRank - b.it.evidenceRank)
-      .map(({ it, v }) => ({ ...it, validated: true, validationNote: v?.note?.slice(0, 140) }));
-  } catch {
-    return items;
-  }
-}
-
-// Rank publication types by evidence strength for medical decision-making
-function rankPubType(pubType: string): number {
-  const p = pubType.toLowerCase();
-  if (p.includes("guideline")) return 1;
-  if (p.includes("meta-analysis") || p.includes("meta analysis")) return 1;
-  if (p.includes("systematic review")) return 1;
-  if (p.includes("randomized controlled trial") || p.includes("randomised controlled trial")) return 2;
-  if (p.includes("clinical trial")) return 3;
-  if (p.includes("cohort")) return 4;
-  if (p.includes("case-control") || p.includes("case control")) return 4;
-  if (p.includes("case report")) return 6;
-  if (p.includes("editorial") || p.includes("comment") || p.includes("letter") || p.includes("opinion")) return 7;
-  if (p.includes("review")) return 3;
-  return 5;
-}
-
-type LitResult = { items: LiteratureItem[]; total: number; error?: string | null };
+type LitResult = { items: LiteratureItem[]; total: number; error?: string | null; sourceStatus?: Record<string, "ok" | "unavailable"> };
 type CacheEntry = { at: number; value: LitResult };
 const TTL_MS = 15 * 60 * 1000; // 15 min
 const MAX_ENTRIES = 200;
@@ -280,7 +163,7 @@ async function pubmed(term: string, retmax: number): Promise<Array<Record<string
       journalTitle: tag(a, "Title") && a.includes("<Journal>") ? tag(a.slice(a.indexOf("<Journal>")), "Title") : "",
       pubYear: year,
       doi, pmid, pmcid,
-      isOpenAccess: pmcid ? "Y" : "N",
+      isOpenAccess: pmcid ? "Y" : "N", source: "PubMed",
       pubTypeList: { pubType: pubTypes },
     });
   }
@@ -299,11 +182,11 @@ async function getJson<T>(url: string, ms = 10000): Promise<T> {
   return (await res.json()) as T;
 }
 
-async function openAlex(phrases: string[], ing: string[], from: number): Promise<Raw[]> {
+async function openAlex(phrases: string[], ing: string[], from: number, toDate: string): Promise<Raw[]> {
   const c = phrases.slice(0, 3).map((p) => `"${p}"`).join(" OR ");
   const i = ing.slice(0, 8).map((t) => `"${t}"`).join(" OR ");
   const search = i ? `(${c}) AND (${i})` : c;
-  const url = `https://api.openalex.org/works?search=${encodeURIComponent(search)}&filter=from_publication_date:${from}-01-01,language:en,type:article|review&per-page=50&mailto=raouf66@gmail.com`;
+  const url = `https://api.openalex.org/works?search=${encodeURIComponent(search)}&filter=from_publication_date:${from}-01-01,to_publication_date:${toDate},language:en,type:article|review&per-page=50&mailto=raouf66@gmail.com`;
   const j = await getJson<{ results?: Array<Record<string, any>> }>(url);
   return (j.results ?? []).map((w) => {
     const inv = w.abstract_inverted_index as Record<string, number[]> | null;
@@ -345,8 +228,8 @@ async function semanticScholar(phrases: string[], ing: string[], from: number, t
   });
 }
 
-async function crossref(phrases: string[], ing: string[], from: number): Promise<Raw[]> {
-  const url = `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(freeQuery(phrases, ing))}&filter=from-pub-date:${from},type:journal-article,has-abstract:true&rows=40&select=DOI,title,author,container-title,issued,abstract&mailto=raouf66@gmail.com`;
+async function crossref(phrases: string[], ing: string[], from: number, toDate: string): Promise<Raw[]> {
+  const url = `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(freeQuery(phrases, ing))}&filter=from-pub-date:${from}-01-01,until-pub-date:${toDate},type:journal-article,has-abstract:true&rows=40&select=DOI,title,author,container-title,issued,abstract&mailto=raouf66@gmail.com`;
   const j = await getJson<{ message?: { items?: Array<Record<string, any>> } }>(url);
   return (j.message?.items ?? []).map((w) => ({
     title: (w.title ?? [""])[0], abstractText: xmlText(String(w.abstract ?? "")).replace(/^Abstract\s*/i, ""),
@@ -358,22 +241,6 @@ async function crossref(phrases: string[], ing: string[], from: number): Promise
 }
 
 // Merge sources: one record per DOI/PMID/title, keeping the richest copy.
-function dedupeRaw(list: Raw[]): Raw[] {
-  const map = new Map<string, Raw>();
-  for (const r of list) {
-    const title = String(r.title ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 120);
-    if (!title) continue;
-    const key = r.doi ? `d:${String(r.doi).toLowerCase()}` : r.pmid ? `p:${r.pmid}` : `t:${title}`;
-    const tkey = `t:${title}`;
-    const prev = map.get(key) ?? map.get(tkey);
-    if (!prev || String(r.abstractText ?? "").length > String(prev.abstractText ?? "").length) {
-      const merged = prev ? { ...r, pmid: r.pmid ?? prev.pmid, pmcid: r.pmcid ?? prev.pmcid, doi: r.doi ?? prev.doi } : r;
-      map.set(key, merged); map.set(tkey, merged);
-    }
-  }
-  return [...new Set(map.values())];
-}
-
 export const searchLiterature = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .middleware([requireSupabaseAuth])
@@ -383,6 +250,7 @@ export const searchLiterature = createServerFn({ method: "POST" })
     const now = new Date();
     const fromYear = now.getFullYear() - yearsBack;
     const toYear = now.getFullYear();
+    const toDate = now.toISOString().slice(0, 10);
 
     const cacheKey = `${normalizeQuery(data.query)}|${yearsBack}|${limit}|${(data.ingredients ?? []).slice().sort().join(",")}`;
     const hit = cache.get(cacheKey);
@@ -398,7 +266,6 @@ export const searchLiterature = createServerFn({ method: "POST" })
         // title/abstract, peer-reviewed only, then re-ranked locally.
         const ingTerms = ingredientTerms(data.ingredients ?? []);
         const toks = complaintTokens(data.query);
-        const clean = data.query.replace(/["()]/g, "");
         const phrases = complaintPhrases(data.query);
         const core = coreTokens(toks);
         const complaintClause = `(${phrases.map((p) => `TITLE_ABS:"${p}"`).join(" OR ")} OR (${core.map((t) => `TITLE_ABS:${t}`).join(" AND ")}))`;
@@ -410,39 +277,46 @@ export const searchLiterature = createServerFn({ method: "POST" })
           ingClause,
           `(SRC:MED OR SRC:PMC)`,
           `LANG:eng`,
-          `FIRST_PDATE:[${from}-01-01 TO ${toYear}-12-31]`,
-          `NOT PUB_TYPE:"Preprint"`,
-          `NOT SRC:PPR`,
-        ].filter(Boolean).join(" AND ");
+          `FIRST_PDATE:[${from}-01-01 TO ${toDate}]`,
+        ].filter(Boolean).join(" AND ") + ' NOT PUB_TYPE:"Preprint" NOT SRC:PPR';
         // Same logic translated to PubMed E-utilities syntax.
         const buildPubmed = (from: number) => [
           `(${phrases.map((p) => `"${p}"[Title/Abstract]`).join(" OR ")} OR (${core.map((t) => `${t}[Title/Abstract]`).join(" AND ")}))`,
           ingTerms.length ? `(${ingTerms.map((t) => `"${t}"[Title/Abstract]`).join(" OR ")})` : null,
           `english[Language]`,
-          `("${from}/01/01"[Date - Publication] : "${toYear}/12/31"[Date - Publication])`,
+          `("${from}/01/01"[Date - Publication] : "${toDate.replace(/-/g, "/")}"[Date - Publication])`,
         ].filter(Boolean).join(" AND ") + " NOT preprint[Publication Type]";
 
-        const primary = (async () => {
+        const sourceStatus: Record<string, "ok" | "unavailable"> = {};
+        const source = async (name: string, load: () => Promise<Raw[]>): Promise<Raw[]> => {
           try {
-            let j = await epmc(build(fromYear), 100);
-            if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
-            return j.resultList?.result ?? [];
-          } catch {
-            // Europe PMC unreachable/rate-limited: fall back to PubMed directly.
-            let r = await pubmed(buildPubmed(fromYear), 100).catch(() => []);
-            if (r.length < 4) r = await pubmed(buildPubmed(toYear - 12), 100).catch(() => r);
-            return r;
+            const rows = await load();
+            sourceStatus[name] = "ok";
+            return rows;
+          } catch (err) {
+            sourceStatus[name] = "unavailable";
+            console.warn(`Literature source unavailable: ${name}`, err instanceof Error ? err.message : "request failed");
+            return [];
           }
+        };
+        const primary = (async () => {
+          const rows = await source("Europe PMC", async () => {
+            const j = await epmc(build(fromYear), 100);
+            return (j.resultList?.result ?? []).map(r => ({ ...r, source: "Europe PMC" }));
+          });
+          if (sourceStatus["Europe PMC"] === "ok") return rows;
+          return source("PubMed", () => pubmed(buildPubmed(fromYear), 100));
         })();
-        // Secondary open scholarly indexes, queried in parallel. Each failure
-        // is isolated; results go through the same strict evidence gate.
-        const [epmcRaw, ...others] = await Promise.all([
+        const batches = await Promise.all([
           primary,
-          openAlex(phrases, ingTerms, fromYear).catch(() => []),
-          semanticScholar(phrases, ingTerms, fromYear, toYear).catch(() => []),
-          crossref(phrases, ingTerms, fromYear).catch(() => []),
+          source("OpenAlex", () => openAlex(phrases, ingTerms, fromYear, toDate)),
+          source("Semantic Scholar", () => semanticScholar(phrases, ingTerms, fromYear, toYear)),
+          source("Crossref", () => crossref(phrases, ingTerms, fromYear, toDate)),
         ]);
-        const raw = dedupeRaw([epmcRaw, ...others].flat());
+        if (!Object.values(sourceStatus).some(s => s === "ok")) {
+          return { items: [], total: 0, sourceStatus, error: "Medical literature sources are temporarily unavailable. Please try again shortly." };
+        }
+        const raw = dedupeEvidenceRaw(batches.flat());
 
         const items: LiteratureItem[] = raw.map((r) => {
           const pubTypes = (r.pubTypeList as { pubType?: string[] } | undefined)?.pubType ?? [];
@@ -462,7 +336,7 @@ export const searchLiterature = createServerFn({ method: "POST" })
           const abstract = String(r.abstractText ?? "").replace(/<[^>]+>/g, "");
           const tl = title.toLowerCase();
           const al = abstract.toLowerCase();
-          const matchedIngredients = ingTerms.filter((t) => al.includes(t.toLowerCase()) || tl.includes(t.toLowerCase()));
+          const matchedIngredients = ingTerms.filter((t) => mentions(abstract, t) || mentions(title, t));
           let relevance = 0;
           for (const t of ingTerms) {
             const k = t.toLowerCase();
@@ -480,39 +354,21 @@ export const searchLiterature = createServerFn({ method: "POST" })
             journal: String(r.journalTitle ?? r.bookOrReportDetails ?? ""),
             year: String(r.pubYear ?? ""),
             doi, pmid, pmcid, url,
-            abstract: abstract.slice(0, 1200),
+            abstract,
             pubType,
-            evidenceRank: rankPubType(pubType),
+            evidenceRank: 9,
             openAccess,
             matchedIngredients,
             relevance,
           };
         });
 
-        // Strict evidence gate: Tier 1 (guideline / systematic review /
-        // meta-analysis) and Tier 2 (RCT / placebo-controlled) human studies
-        // only. Design is read from pubType AND title/abstract text.
-        const NOTICE = /^(retraction|retracted|erratum|correction|corrigendum|expression of concern|author'?s? reply|reply|comment|letter|study protocol)\b/i;
-        const PRECLIN = /\b(mice|mouse|murine|rats?|rodents?|zebrafish|in vitro|cell lines?|cell culture|granulosa cells|animal model)\b/i;
-        const tierOf = (i: LiteratureItem): number => {
-          const t = `${i.pubType} ${i.title}`.toLowerCase();
-          const a = i.abstract.toLowerCase();
-          if (/protocol/.test(i.title.toLowerCase())) return 9;
-          if (/guideline|consensus statement|meta-analys|meta analys|systematic review/.test(t) || /\b(systematic review|meta-analysis)\b/.test(a.slice(0, 400))) return 1;
-          if (/randomi[sz]ed|placebo-controlled|double-blind/.test(t) || /\b(randomi[sz]ed|placebo-controlled|double-blind)\b/.test(a)) return 2;
-          return 9;
-        };
         const finalItems = items
-          .filter((i) =>
-            i.abstract.length > 50 && !NOTICE.test(i.title) &&
-            !PRECLIN.test(i.title) && !(PRECLIN.test(i.abstract) && !/\b(patients|women|men|participants|subjects|humans?)\b/i.test(i.abstract)) &&
-            (ingTerms.length === 0 || (i.matchedIngredients?.length ?? 0) > 0),
-          )
-          .map((i) => ({ ...i, evidenceRank: tierOf(i) }))
-          .filter((i) => i.evidenceRank <= 2)
-          .sort((a, b) => a.evidenceRank - b.evidenceRank || (b.relevance ?? 0) - (a.relevance ?? 0) || Number(b.year || 0) - Number(a.year || 0))
+          .filter(i => qualifiesEvidence(i, phrases, core, ingTerms, fromYear, toYear))
+          .map(i => ({ ...i, evidenceRank: evidenceTier(i) }))
+          .sort((a, b) => a.evidenceRank - b.evidenceRank || Number(b.year) - Number(a.year) || (b.relevance ?? 0) - (a.relevance ?? 0))
           .slice(0, limit);
-        return { items: finalItems, total: finalItems.length, error: null };
+        return { items: finalItems, total: finalItems.length, error: null, sourceStatus };
       } catch (err) {
         console.error("searchLiterature failed:", err);
         // Bounded failure: never let a slow/unreachable medical-literature
