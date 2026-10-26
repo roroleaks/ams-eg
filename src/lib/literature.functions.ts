@@ -335,16 +335,27 @@ export const searchLiterature = createServerFn({ method: "POST" })
           `("${from}/01/01"[Date - Publication] : "${toYear}/12/31"[Date - Publication])`,
         ].filter(Boolean).join(" AND ") + " NOT preprint[Publication Type]";
 
-        let raw: Array<Record<string, unknown>>;
-        try {
-          let j = await epmc(build(fromYear), 100);
-          if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
-          raw = j.resultList?.result ?? [];
-        } catch {
-          // Europe PMC unreachable/rate-limited: fall back to PubMed directly.
-          raw = await pubmed(buildPubmed(fromYear), 100);
-          if (raw.length < 4) raw = await pubmed(buildPubmed(toYear - 12), 100);
-        }
+        const primary = (async () => {
+          try {
+            let j = await epmc(build(fromYear), 100);
+            if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
+            return j.resultList?.result ?? [];
+          } catch {
+            // Europe PMC unreachable/rate-limited: fall back to PubMed directly.
+            let r = await pubmed(buildPubmed(fromYear), 100).catch(() => []);
+            if (r.length < 4) r = await pubmed(buildPubmed(toYear - 12), 100).catch(() => r);
+            return r;
+          }
+        })();
+        // Secondary open scholarly indexes, queried in parallel. Each failure
+        // is isolated; results go through the same strict evidence gate.
+        const [epmcRaw, ...others] = await Promise.all([
+          primary,
+          openAlex(phrases, ingTerms, fromYear).catch(() => []),
+          semanticScholar(phrases, ingTerms, fromYear, toYear).catch(() => []),
+          crossref(phrases, ingTerms, fromYear).catch(() => []),
+        ]);
+        const raw = dedupeRaw([epmcRaw, ...others].flat());
 
         const items: LiteratureItem[] = raw.map((r) => {
           const pubTypes = (r.pubTypeList as { pubType?: string[] } | undefined)?.pubType ?? [];
