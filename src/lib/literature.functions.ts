@@ -287,6 +287,93 @@ async function pubmed(term: string, retmax: number): Promise<Array<Record<string
   return out;
 }
 
+// ---- Additional open scholarly sources ----------------------------------
+type Raw = Record<string, unknown>;
+const UA = "AMS-Product-Advisor/1.0 (mailto:raouf66@gmail.com)";
+const freeQuery = (phrases: string[], ing: string[]) =>
+  `${phrases[0] ?? ""} ${ing.slice(0, 3).join(" ")}`.trim();
+
+async function getJson<T>(url: string, ms = 10000): Promise<T> {
+  const res = await fetch(url, { headers: { Accept: "application/json", "User-Agent": UA }, signal: AbortSignal.timeout(ms) });
+  if (!res.ok) throw new Error(`${new URL(url).host} ${res.status}`);
+  return (await res.json()) as T;
+}
+
+async function openAlex(phrases: string[], ing: string[], from: number): Promise<Raw[]> {
+  const c = phrases.slice(0, 3).map((p) => `"${p}"`).join(" OR ");
+  const i = ing.slice(0, 8).map((t) => `"${t}"`).join(" OR ");
+  const search = i ? `(${c}) AND (${i})` : c;
+  const url = `https://api.openalex.org/works?search=${encodeURIComponent(search)}&filter=from_publication_date:${from}-01-01,language:en,type:article|review&per-page=50&mailto=raouf66@gmail.com`;
+  const j = await getJson<{ results?: Array<Record<string, any>> }>(url);
+  return (j.results ?? []).map((w) => {
+    const inv = w.abstract_inverted_index as Record<string, number[]> | null;
+    let abstract = "";
+    if (inv) {
+      const pos: string[] = [];
+      for (const [word, idx] of Object.entries(inv)) for (const k of idx) pos[k] = word;
+      abstract = pos.filter(Boolean).join(" ");
+    }
+    const doi = w.doi ? String(w.doi).replace(/^https?:\/\/doi\.org\//, "") : null;
+    const pmid = w.ids?.pmid ? String(w.ids.pmid).split("/").pop() : null;
+    const pmcRaw = w.ids?.pmcid ? String(w.ids.pmcid).split("/").pop() : null;
+    return {
+      title: w.title ?? w.display_name ?? "", abstractText: abstract,
+      authorString: (w.authorships ?? []).slice(0, 20).map((a: any) => a.author?.display_name).filter(Boolean).join(", "),
+      journalTitle: w.primary_location?.source?.display_name ?? "",
+      pubYear: String(w.publication_year ?? ""), doi, pmid, pmcid: pmcRaw,
+      isOpenAccess: w.open_access?.is_oa ? "Y" : "N",
+      pubTypeList: { pubType: [w.type === "review" ? "Review" : "Journal Article"] }, source: "OpenAlex",
+    };
+  });
+}
+
+async function semanticScholar(phrases: string[], ing: string[], from: number, to: number): Promise<Raw[]> {
+  const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(freeQuery(phrases, ing))}&year=${from}-${to}&limit=50&fields=title,abstract,authors,venue,year,externalIds,publicationTypes,isOpenAccess`;
+  const j = await getJson<{ data?: Array<Record<string, any>> }>(url);
+  return (j.data ?? []).map((p) => {
+    const types: string[] = p.publicationTypes ?? [];
+    return {
+      title: p.title ?? "", abstractText: p.abstract ?? "",
+      authorString: (p.authors ?? []).slice(0, 20).map((a: any) => a.name).join(", "),
+      journalTitle: p.venue ?? "", pubYear: String(p.year ?? ""),
+      doi: p.externalIds?.DOI ?? null, pmid: p.externalIds?.PubMed ?? null,
+      pmcid: p.externalIds?.PubMedCentral ? `PMC${String(p.externalIds.PubMedCentral).replace(/^PMC/, "")}` : null,
+      isOpenAccess: p.isOpenAccess ? "Y" : "N",
+      pubTypeList: { pubType: types.map((t) => t === "MetaAnalysis" ? "Meta-Analysis" : t === "ClinicalTrial" ? "Clinical Trial" : t) },
+      source: "Semantic Scholar",
+    };
+  });
+}
+
+async function crossref(phrases: string[], ing: string[], from: number): Promise<Raw[]> {
+  const url = `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(freeQuery(phrases, ing))}&filter=from-pub-date:${from},type:journal-article,has-abstract:true&rows=40&select=DOI,title,author,container-title,issued,abstract&mailto=raouf66@gmail.com`;
+  const j = await getJson<{ message?: { items?: Array<Record<string, any>> } }>(url);
+  return (j.message?.items ?? []).map((w) => ({
+    title: (w.title ?? [""])[0], abstractText: xmlText(String(w.abstract ?? "")).replace(/^Abstract\s*/i, ""),
+    authorString: (w.author ?? []).slice(0, 20).map((a: any) => `${a.family ?? ""} ${a.given?.[0] ?? ""}`.trim()).join(", "),
+    journalTitle: (w["container-title"] ?? [""])[0], pubYear: String(w.issued?.["date-parts"]?.[0]?.[0] ?? ""),
+    doi: w.DOI ?? null, pmid: null, pmcid: null, isOpenAccess: "N",
+    pubTypeList: { pubType: ["Journal Article"] }, source: "Crossref",
+  }));
+}
+
+// Merge sources: one record per DOI/PMID/title, keeping the richest copy.
+function dedupeRaw(list: Raw[]): Raw[] {
+  const map = new Map<string, Raw>();
+  for (const r of list) {
+    const title = String(r.title ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 120);
+    if (!title) continue;
+    const key = r.doi ? `d:${String(r.doi).toLowerCase()}` : r.pmid ? `p:${r.pmid}` : `t:${title}`;
+    const tkey = `t:${title}`;
+    const prev = map.get(key) ?? map.get(tkey);
+    if (!prev || String(r.abstractText ?? "").length > String(prev.abstractText ?? "").length) {
+      const merged = prev ? { ...r, pmid: r.pmid ?? prev.pmid, pmcid: r.pmcid ?? prev.pmcid, doi: r.doi ?? prev.doi } : r;
+      map.set(key, merged); map.set(tkey, merged);
+    }
+  }
+  return [...new Set(map.values())];
+}
+
 export const searchLiterature = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .middleware([requireSupabaseAuth])
@@ -335,16 +422,27 @@ export const searchLiterature = createServerFn({ method: "POST" })
           `("${from}/01/01"[Date - Publication] : "${toYear}/12/31"[Date - Publication])`,
         ].filter(Boolean).join(" AND ") + " NOT preprint[Publication Type]";
 
-        let raw: Array<Record<string, unknown>>;
-        try {
-          let j = await epmc(build(fromYear), 100);
-          if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
-          raw = j.resultList?.result ?? [];
-        } catch {
-          // Europe PMC unreachable/rate-limited: fall back to PubMed directly.
-          raw = await pubmed(buildPubmed(fromYear), 100);
-          if (raw.length < 4) raw = await pubmed(buildPubmed(toYear - 12), 100);
-        }
+        const primary = (async () => {
+          try {
+            let j = await epmc(build(fromYear), 100);
+            if ((j.resultList?.result?.length ?? 0) < 4) j = await epmc(build(toYear - 12), 100);
+            return j.resultList?.result ?? [];
+          } catch {
+            // Europe PMC unreachable/rate-limited: fall back to PubMed directly.
+            let r = await pubmed(buildPubmed(fromYear), 100).catch(() => []);
+            if (r.length < 4) r = await pubmed(buildPubmed(toYear - 12), 100).catch(() => r);
+            return r;
+          }
+        })();
+        // Secondary open scholarly indexes, queried in parallel. Each failure
+        // is isolated; results go through the same strict evidence gate.
+        const [epmcRaw, ...others] = await Promise.all([
+          primary,
+          openAlex(phrases, ingTerms, fromYear).catch(() => []),
+          semanticScholar(phrases, ingTerms, fromYear, toYear).catch(() => []),
+          crossref(phrases, ingTerms, fromYear).catch(() => []),
+        ]);
+        const raw = dedupeRaw([epmcRaw, ...others].flat());
 
         const items: LiteratureItem[] = raw.map((r) => {
           const pubTypes = (r.pubTypeList as { pubType?: string[] } | undefined)?.pubType ?? [];
