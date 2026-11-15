@@ -1,2 +1,3 @@
 Keep the copyright line in the shared root layout rather than individual pages, so all app screens show the same text without duplication.
 Keep deterministic literature qualification and cross-source deduplication in the browser-safe literature-relevance module so the production search and regression tests use identical rules.
+Keep scheduled public callbacks under `src/routes/api/public/*` protected by the generated cron authenticator; health checks must use minimal private probes and never expose account data or privileged keys.
