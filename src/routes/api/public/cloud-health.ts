@@ -30,8 +30,7 @@ export const Route = createFileRoute("/api/public/cloud-health")({
         const { error } = await supabaseAdmin
           .from("profiles")
           .select("id")
-          .limit(1)
-          .maybeSingle();
+          .limit(0);
 
         if (error) {
           return Response.json({ status: "unavailable" }, { status: 503 });

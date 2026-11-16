@@ -6,4 +6,5 @@
 
 # Daily Lovable Cloud health check
 - [x] Add a cron-authenticated callback that checks Auth and performs a minimal database query.
-- [ ] Schedule the callback daily and verify the saved schedule.
+- [x] Schedule the callback daily and verify the saved schedule.
+- [ ] Publish the app update so the production callback exists; the preview callback is live and rejects unauthenticated requests.
